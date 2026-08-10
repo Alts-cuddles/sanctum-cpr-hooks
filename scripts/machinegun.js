@@ -43,28 +43,12 @@ window._machinegunHookId = Hooks.on("createChatMessage", async (message) => {
     const weaponType = (item.system?.weaponType || "").toLowerCase().trim();
     const name = (item.name || "").toLowerCase();
 
+    // Machine Gun detection — excludes BMG-500
     const isMachineGun =
-      weaponType === "machinegun" ||
-      weaponType === "machine gun" ||
-      name.includes("helix") ||
-      name.includes("machine gun") ||
-      name.includes("machinegun") ||
-      name.includes("chaingun") ||
-      name.includes("victoria") ||
-      name.includes("lmg") ||
-      name.includes("mmg") ||
-      name.includes("hmg") ||
-      name.includes("bmg") ||
-      name.includes("midnight assault") ||
-      name.includes("deathwind") ||
-      name.includes("dawnmaker") ||
-      name.includes("mk.27") ||
-      name.includes("mountain goat") ||
-      name.includes("neo rapid") ||
-      name.includes("russia bmg") ||
-      name.includes("scatter ratter") ||
-      name.includes("stickybomb") ||
-      name.includes("big boomer");
+      (weaponType === "machinegun" || weaponType === "machine gun") &&
+      !name.includes("bmg-500") &&
+      !name.includes("bmg 500") &&
+      !name.includes("russia bmg");
 
     if (!isMachineGun) return;
 
