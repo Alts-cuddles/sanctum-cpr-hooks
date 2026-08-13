@@ -1,30 +1,11 @@
-{
-  "id": "sanctum-cpr-hooks",
-  "title": "Sanctum CPR Hooks",
-  "description": "Ammo modifiers, Machine Gun / Subcompact SMG / Machine Pistol Autofire DV, and Speedware Dodge Tracker for Cyberpunk RED",
-  "version": "1.0.0",
-  "compatibility": {
-    "minimum": "12",
-    "verified": "12"
-  },
-  "authors": [
-    {
-      "name": "Alts-cuddles",
-      "url": "https://github.com/Alts-cuddles"
-    }
-  ],
-  "esmodules": [
-    "scripts/main.js"
-  ],
-  "relationships": {
-    "systems": [
-      {
-        "id": "cyberpunk-red-core",
-        "type": "system"
-      }
-    ]
-  },
-  "url": "https://github.com/Alts-cuddles/sanctum-cpr-hooks",
-  "manifest": "https://github.com/Alts-cuddles/sanctum-cpr-hooks/releases/latest/download/module.json",
-  "download": "https://github.com/Alts-cuddles/sanctum-cpr-hooks/releases/latest/download/sanctum-cpr-hooks.zip"
-}
+import "./ammo.js";
+import "./machinegun.js";
+import "./subcompactsmg.js";
+import "./machinepistol.js";
+import "./speedware.js";
+import "./dvDisplay.js";
+
+Hooks.once("ready", () => {
+  ui.notifications.info("✅ Sanctum CPR Hooks loaded", { permanent: false });
+  console.log("Sanctum CPR Hooks | Fully loaded");
+});
