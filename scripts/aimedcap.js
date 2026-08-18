@@ -63,12 +63,21 @@ window._aimedCapHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
       const difference = currentTotal - (-2);
       const corrected = currentAdditional - difference;
 
+      // Update input
       modInput.val(corrected);
       const el = modInput[0];
       ["focus", "input", "change", "blur"].forEach((evt) => {
         el.dispatchEvent(new Event(evt, { bubbles: true }));
       });
       modInput.trigger("focus").trigger("input").trigger("change").trigger("blur");
+
+      // Update CPR roll data (what the roll actually uses)
+      if (app.rollData) {
+        app.rollData.additionalMods = [corrected];
+      }
+      if (typeof app.render === "function") {
+        app.render(false);
+      }
 
       html.find("p.sanctum-aimed-cap-msg").remove();
       modInput.closest(".form-group").after(
