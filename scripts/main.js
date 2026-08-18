@@ -1,9 +1,11 @@
 import "./ammo.js";
 import "./machinegun.js";
 import "./subcompactsmg.js";
+import "./aimedCap.js";
 import "./machinepistol.js";
 import "./speedware.js";
 import "./dvDisplay.js";
+import "./onfire.js";
 
 Hooks.once("ready", () => {
   ui.notifications.info("✅ Sanctum CPR Hooks loaded", { permanent: false });

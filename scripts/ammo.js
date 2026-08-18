@@ -1,4 +1,4 @@
-console.log("Sanctum Ammo Hooks 2.6 | Loading...");
+console.log("Sanctum Ammo Hooks 2.1 | Loading...");
 
 const ammoHookList = [
   "_explosiveDamageHookId",
@@ -330,63 +330,25 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
       let added = 0;
       const messages = [];
 
-      // High Precision Aimed – dynamic Total Mods cap
-      if (hasHighPrecision && isAimed && precisionAllowed) {
-        // Step 1: Apply the normal +2
-        app.rollData.additionalMods = [2];
-        app.render(false);
-
-        // Step 2: After the dialog recalculates, check Total Mods and adjust if needed
-        setTimeout(() => {
-          const totalEl = html.find(".total-mod-value").first();
-          let currentTotal = parseInt(totalEl.text().replace(/[^-\d]/g, ""), 10);
-
-          console.log("%c[High Precision] After +2, Total Mods =", "color: #ff9800", currentTotal);
-
-          if (!isNaN(currentTotal) && currentTotal > -2) {
-            const difference = currentTotal - (-2);
-            const corrected = 2 - difference;
-
-            console.log(`%c[High Precision] Adjusting additionalMods from 2 → ${corrected} so Total Mods becomes -2`, "color: #7dffa0");
-
-            app.rollData.additionalMods = [corrected];
-            app.render(false);
-
-            html.find("p.sanctum-ammo-msg").remove();
-            modInput.closest(".form-group").after(
-              `<p class="sanctum-ammo-msg" style="color:#ff9800;font-weight:bold;margin:6px 0;">
-                High Precision Aimed: Total Mods capped at –2 (adjusted by ${difference})
-              </p>`
-            );
-          } else {
-            // Already ≤ -2
-            html.find("p.sanctum-ammo-msg").remove();
-            modInput.closest(".form-group").after(
-              `<p class="sanctum-ammo-msg" style="color:#e74c3c;font-weight:bold;margin:6px 0;">
-                High Precision Ammo: +2 To Hit (Aimed)
-              </p>`
-            );
-          }
-        }, 150);
-
-        return; // Skip normal flow
-      }
-
-      // High Precision (non-aimed)
+      // High Precision – only if qualified and not Autofire/Suppressive
       if (hasHighPrecision && precisionAllowed && !isAutofire && !isSuppressive) {
-        added += 1;
-        messages.push("High Precision Ammo: +1 To Hit");
+        if (isAimed) {
+          added += 2;
+          messages.push("High Precision Ammo: +2 To Hit (Aimed)");
+        } else {
+          added += 1;
+          messages.push("High Precision Ammo: +1 To Hit");
+        }
       } else if (hasHighPrecision && !precisionAllowed) {
         messages.push("High Precision Ammo: Requires Solo (any rank) or Weapon Skill 7+");
       }
 
-      // Tracer
+      // Tracer only on real Autofire
       if (hasTracer && isAutofire && !isSuppressive) {
         added += 1;
         messages.push("Tracer Ammo: +1 To Hit (Autofire)");
       }
 
-      // Explosive
       if (hasExplosive) {
         if (isAimed) {
           added -= 100;
@@ -397,26 +359,34 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
         }
       }
 
-      // Apply normal modifiers
-      if (added !== 0) {
-        modInput.val(added);
-        const el = modInput[0];
-        ["focus", "input", "change", "blur"].forEach(evt => {
-          el.dispatchEvent(new Event(evt, { bubbles: true }));
-        });
-        modInput.trigger("focus").trigger("input").trigger("change").trigger("blur");
-      }
-
-      // Display messages
-      html.find("p.sanctum-ammo-msg").remove();
-      messages.forEach(msg => {
-        const color = msg.includes("Requires") ? "#ff9800" : "#e74c3c";
-        modInput.closest(".form-group").after(
-          `<p class="sanctum-ammo-msg" style="color:${color};font-weight:bold;margin:6px 0;">${msg}</p>`
-        );
-      });
-
       console.log("%c[Sanctum Mods]", "color: #ffeb3b", { added, messages });
+
+      html.find("p.sanctum-ammo-msg").remove();
+
+      if (added !== 0 || messages.length) {
+        if (added !== 0) {
+          modInput.val(added);
+          const el = modInput[0];
+          el.dispatchEvent(new Event("focus", { bubbles: true }));
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("blur", { bubbles: true }));
+          modInput.trigger("focus").trigger("input").trigger("change").trigger("blur");
+        } else {
+          modInput.val(0);
+          modInput.trigger("input").trigger("change");
+        }
+
+        messages.forEach(msg => {
+          const color = msg.includes("Requires") ? "#ff9800" : "#e74c3c";
+          modInput.closest(".form-group").after(
+            `<p class="sanctum-ammo-msg" style="color:${color};font-weight:bold;margin:6px 0;">${msg}</p>`
+          );
+        });
+      } else {
+        modInput.val(0);
+        modInput.trigger("input").trigger("change");
+      }
     };
 
     setTimeout(applyMods, 100);
@@ -469,4 +439,4 @@ window._ammoReminderHookId = Hooks.on("createChatMessage", (message) => {
   }
 });
 
-console.log("Sanctum Ammo Hooks 2.6 | Ready – Dynamic High Precision Total Mods cap");
+console.log("Sanctum Ammo Hooks 2.1 | Ready");
