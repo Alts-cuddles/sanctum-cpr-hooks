@@ -1,7 +1,7 @@
 import "./ammo.js";
 import "./machinegun.js";
 import "./subcompactsmg.js";
-import "./aimedCap.js";
+import "./aimedcap.js";
 import "./machinepistol.js";
 import "./speedware.js";
 import "./dvDisplay.js";
