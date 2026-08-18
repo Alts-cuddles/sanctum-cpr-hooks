@@ -1,18 +1,20 @@
+// ========== SPEEDWARE DODGE TRACKER (WORLD SCRIPT) ==========
+// Multi-GM safe using Combat flags as a shared lock
+
 console.log("Sanctum Speedware Dodge Tracker | Loading...");
 
 (() => {
   if (game.speedwareDodgeTrackerRegistered) return;
   game.speedwareDodgeTrackerRegistered = true;
 
-  const SYSTEM_SPEAKER = { alias: "System" };
-
-  function createSpeedwareMessage(content, backgroundColor = "#1a1a1a") {
+  function createSpeedwareMessage(token, content, backgroundColor = "#1a1a1a") {
     return ChatMessage.create({
-      speaker: SYSTEM_SPEAKER,
+      speaker: ChatMessage.getSpeaker({ token }),
       content: `<div class="cpr-block" style="padding:10px;background-color:${backgroundColor}">${content}</div>`,
     }, { chatBubble: false });
   }
 
+  // Clean old hooks
   if (game.speedwareDodgeHook) {
     Hooks.off("updateCombat", game.speedwareDodgeHook);
   }
@@ -22,20 +24,38 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
 
   game.speedwareDodgeHook = Hooks.on("updateCombat", async (combat, changed) => {
     if (changed.round === undefined) return;
+
+    // Only GMs even attempt it
     if (!game.user.isGM) return;
+
+    const currentRound = combat.round;
+    const announced = foundry.utils.duplicate(combat.getFlag("world", "speedwareAnnounced") || {});
+
+    let needsUpdate = false;
 
     for (const combatant of combat.combatants) {
       const token = combatant.token;
       if (!token) continue;
 
       const actor = token.actor;
+      if (!actor) continue;
+
       const dodgeData = actor.getFlag("world", "speedwareDodge");
       if (!dodgeData) continue;
+
+      // Shared lock key that every client can see
+      const key = `${combatant.id}-${currentRound}`;
+      if (announced[key]) continue;          // already handled by someone
+
+      // Claim it immediately
+      announced[key] = true;
+      needsUpdate = true;
 
       let { name, remaining, max } = dodgeData;
 
       if (remaining > 0) {
         await createSpeedwareMessage(
+          token,
           `<b>${token.name}</b> is dodging with <b>${name}</b><br>
            <span style="font-size:1.1em;"><b>${remaining}/${max}</b> rounds remaining</span>`,
           "#0d4f5c"
@@ -65,14 +85,21 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
         }
 
         await createSpeedwareMessage(
+          token,
           `<b>${token.name}</b> <span class="fg-red">is out of dodges</span>!<br>
            <b style="color:#ff6666;">Better find cover, choom!</b>`,
           "#b90202ff"
         );
       }
     }
+
+    // Write the lock back so other GMs see it
+    if (needsUpdate) {
+      await combat.setFlag("world", "speedwareAnnounced", announced);
+    }
   });
 
+  // Cleanup when combat ends
   game.speedwareCombatEndHook = Hooks.on("combatEnd", async (combat) => {
     if (!game.user.isGM) return;
 
@@ -90,7 +117,10 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
         await actor.deleteEmbeddedDocuments("ActiveEffect", effectsToRemove.map(e => e.id));
       }
     }
+
+    // Clear the announced lock for this combat
+    await combat.unsetFlag("world", "speedwareAnnounced");
   });
 
-  console.log("%cSpeedware Dodge Tracker ready", "color: #0d4f5c; font-weight: bold;");
+  console.log("%cSpeedware Dodge Tracker ready (shared Combat lock)", "color: #0d4f5c; font-weight: bold;");
 })();
