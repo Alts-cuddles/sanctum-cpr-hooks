@@ -1,11 +1,18 @@
 // ============================================
 // Sanctum - Overheat Toggle (On Fire Strong)
-// Force-registers on ready + renderChatMessage
+// Works as: Module script | World script | Macro
 // ============================================
 
 console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight: bold");
 
 (() => {
+  // Prevent double registration
+  if (window.sanctumOverheatRegistered) {
+    console.log("%cSanctum Overheat Toggle | Already registered – skipping", "color: #ff9800");
+    return;
+  }
+  window.sanctumOverheatRegistered = true;
+
   const STATUS_ID = "y4y0rvsz17aj0r4g"; // On Fire (Strong)
 
   async function handleToggle(ev) {
@@ -54,24 +61,27 @@ console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight:
     }
   }
 
-  function bindButtons(html) {
-    const btn = html.find(".custom-apply-onfire");
-    if (!btn.length) return;
-    btn.off("click").on("click", handleToggle);
+  function bindButtons(context = document) {
+    $(context).find(".custom-apply-onfire").off("click.sanctumOverheat").on("click.sanctumOverheat", handleToggle);
   }
 
-  // Register on every chat message render
+  // Bind on new chat messages
   Hooks.on("renderChatMessage", (message, html) => {
     bindButtons(html);
   });
 
-  // Also bind any existing messages when the world is ready
-  Hooks.once("ready", () => {
-    // Re-bind existing chat messages
-    document.querySelectorAll(".custom-apply-onfire").forEach(el => {
-      $(el).off("click").on("click", handleToggle);
-    });
+  // Bind existing + future messages when ready
+  function start() {
+    bindButtons(document);
+    console.log("%cSanctum Overheat Toggle | Ready (works as module / world script / macro)", "color: #ff9500; font-weight: bold");
+  }
 
-    console.log("%cSanctum Overheat Toggle | Ready", "color: #ff9500; font-weight: bold");
-  });
+  if (game.ready) {
+    start();
+  } else {
+    Hooks.once("ready", start);
+  }
+
+  // Extra safety for chat log refreshes
+  Hooks.on("renderChatLog", () => bindButtons(document));
 })();
