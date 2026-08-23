@@ -1,6 +1,6 @@
 // ============================================
 // Sanctum - Overheat Toggle (On Fire Strong)
-// Optimized: renderChatMessage only
+// Force-registers on ready + renderChatMessage
 // ============================================
 
 console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight: bold");
@@ -54,16 +54,24 @@ console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight:
     }
   }
 
-  function register() {
-    Hooks.on("renderChatMessage", (message, html) => {
-      const btn = html.find(".custom-apply-onfire");
-      if (!btn.length) return;
-      btn.off("click").on("click", handleToggle);
+  function bindButtons(html) {
+    const btn = html.find(".custom-apply-onfire");
+    if (!btn.length) return;
+    btn.off("click").on("click", handleToggle);
+  }
+
+  // Register on every chat message render
+  Hooks.on("renderChatMessage", (message, html) => {
+    bindButtons(html);
+  });
+
+  // Also bind any existing messages when the world is ready
+  Hooks.once("ready", () => {
+    // Re-bind existing chat messages
+    document.querySelectorAll(".custom-apply-onfire").forEach(el => {
+      $(el).off("click").on("click", handleToggle);
     });
 
     console.log("%cSanctum Overheat Toggle | Ready", "color: #ff9500; font-weight: bold");
-  }
-
-  if (game.ready) register();
-  else Hooks.once("ready", register);
+  });
 })();
