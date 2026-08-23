@@ -1,72 +1,14 @@
 // ============================================
-// Sanctum - On Fire System
-// - End of Turn damage (your original logic)
-// - Toggle On Fire button (from Quick Hack UI)
+// Sanctum - On Fire Damage (End of Turn Only)
+// No activeGM requirement
+// Shared Combat lock = message posts only once
+// Works as Macro or Module
 // ============================================
 
-console.log("%cSanctum On Fire | Loading (lock-based + Toggle button)", "color: #ff6b00; font-weight: bold");
+console.log("%cSanctum On Fire | Loading (lock-based, no activeGM)", "color: #ff6b00; font-weight: bold");
 
 (() => {
-  // --------------------------------------------------
-  // 1. TOGGLE ON FIRE BUTTON (new)
-  // --------------------------------------------------
-  $('#chat-log').off('click', '.custom-apply-onfire');
-
-  $('#chat-log').on('click', '.custom-apply-onfire', async function (ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-
-    if (!game.user.isGM) {
-      ui.notifications.error("Only the GM can toggle On Fire.");
-      return;
-    }
-
-    const button = $(this);
-    const targetId = button.attr('data-target-id') || button.data('target-id');
-    const targetName = button.attr('data-target-name') || button.data('target-name');
-
-    if (!targetId) {
-      ui.notifications.error("No target ID found on the button.");
-      return;
-    }
-
-    const target = canvas.tokens.get(targetId);
-    if (!target?.actor) {
-      ui.notifications.error(`Could not find token: ${targetName || targetId}`);
-      return;
-    }
-
-    const statusId = "y4y0rvsz17aj0r4g"; // On Fire (Strong)
-    const actor = target.actor;
-
-    const alreadyOnFire = actor.effects.some(e =>
-      !e.disabled &&
-      (e.statuses?.has(statusId) || e.name === "On Fire (Strong)")
-    );
-
-    try {
-      if (alreadyOnFire) {
-        await actor.toggleStatusEffect(statusId, { active: false });
-        ui.notifications.info(`${target.name} is no longer On Fire`);
-        button.css({ opacity: "1", pointerEvents: "auto", color: "#ff9500" });
-        button.html(`<i class="fas fa-fire"></i>`);
-      } else {
-        await actor.toggleStatusEffect(statusId, { active: true });
-        ui.notifications.info(`${target.name} is now On Fire (Strong)`);
-        button.css({ opacity: "0.7", color: "#39ff14" });
-        button.html(`<i class="fas fa-check"></i>`);
-      }
-    } catch (err) {
-      console.error("[OnFire] Failed to toggle status:", err);
-      ui.notifications.error("Failed to toggle On Fire (Strong).");
-    }
-  });
-
-  console.log("%c[OnFire] Toggle button handler attached", "color: #4caf50");
-
-  // --------------------------------------------------
-  // 2. END OF TURN DAMAGE (your original logic)
-  // --------------------------------------------------
+  // Clean previous hook
   if (globalThis.sanctumOnFireHook) {
     Hooks.off("updateCombat", globalThis.sanctumOnFireHook);
     console.log("[OnFire] Removed old hook");
@@ -197,7 +139,7 @@ console.log("%cSanctum On Fire | Loading (lock-based + Toggle button)", "color: 
     globalThis.sanctumLastRound = game.combat.round ?? 0;
   }
 
-  // Seed on new combat
+  // Seed on new combat + clear old locks
   Hooks.on("combatStart", (combat) => {
     globalThis.sanctumLastCombatantId = combat.combatant?.id ?? null;
     globalThis.sanctumLastRound = combat.round ?? 0;
@@ -209,6 +151,6 @@ console.log("%cSanctum On Fire | Loading (lock-based + Toggle button)", "color: 
     await combat.unsetFlag("world", "onFireAnnounced");
   });
 
-  ui.notifications.info("On Fire active (Toggle button + End of Turn)");
-  console.log("%cSanctum On Fire | Ready", "color: #ff6b00; font-weight: bold");
+  ui.notifications.info("On Fire active (lock-based, no activeGM)");
+  console.log("%cSanctum On Fire | Ready – any GM can run it, message posts only once", "color: #ff6b00; font-weight: bold");
 })();
