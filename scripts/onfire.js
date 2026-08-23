@@ -50,7 +50,6 @@ console.log("%cSanctum On Fire | Loading (lock-based, no activeGM)", "color: #ff
     if (finishedId === currentCombatantId) return;
 
     // ========== SHARED LOCK ==========
-    // Key is unique per combatant per round
     const lockKey = `${combat.id}-${finishedId}-${currentRound}`;
     const announced = foundry.utils.duplicate(combat.getFlag("world", "onFireAnnounced") || {});
 
@@ -60,7 +59,7 @@ console.log("%cSanctum On Fire | Loading (lock-based, no activeGM)", "color: #ff
       return;
     }
 
-    // Claim the lock FIRST (before damage or message)
+    // Claim the lock FIRST
     announced[lockKey] = game.user.id;
     try {
       await combat.setFlag("world", "onFireAnnounced", announced);
@@ -139,7 +138,7 @@ console.log("%cSanctum On Fire | Loading (lock-based, no activeGM)", "color: #ff
     globalThis.sanctumLastRound = game.combat.round ?? 0;
   }
 
-  // Seed on new combat + clear old locks
+  // Seed on new combat
   Hooks.on("combatStart", (combat) => {
     globalThis.sanctumLastCombatantId = combat.combatant?.id ?? null;
     globalThis.sanctumLastRound = combat.round ?? 0;
@@ -151,6 +150,9 @@ console.log("%cSanctum On Fire | Loading (lock-based, no activeGM)", "color: #ff
     await combat.unsetFlag("world", "onFireAnnounced");
   });
 
-  ui.notifications.info("On Fire active (lock-based, no activeGM)");
-  console.log("%cSanctum On Fire | Ready – any GM can run it, message posts only once", "color: #ff6b00; font-weight: bold");
+  // Safe notification – only after UI is ready (this was the crash)
+  Hooks.once("ready", () => {
+    ui.notifications.info("On Fire active (lock-based, no activeGM)");
+    console.log("%cSanctum On Fire | Ready – any GM can run it, message posts only once", "color: #ff6b00; font-weight: bold");
+  });
 })();
