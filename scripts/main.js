@@ -7,7 +7,6 @@ import "./speedware.js";
 import "./dvDisplay.js";
 import "./onfire.js";
 import "./overheat.js";
-import "./quickhack.js";
 
 Hooks.once("ready", () => {
   ui.notifications.info("Sanctum CPR Hooks loaded", { permanent: false });
