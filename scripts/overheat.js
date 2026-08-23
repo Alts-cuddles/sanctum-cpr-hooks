@@ -1,16 +1,14 @@
 // ============================================
 // Sanctum - Overheat Toggle (On Fire Strong)
-// Separate from End-of-Turn damage (onfire.js)
-// Handles the button from Quick Hack UI
+// Optimized: renderChatMessage only
 // ============================================
 
 console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight: bold");
 
 (() => {
-  // Clean any previous handler
-  $('#chat-log').off('click', '.custom-apply-onfire');
+  const STATUS_ID = "y4y0rvsz17aj0r4g"; // On Fire (Strong)
 
-  $('#chat-log').on('click', '.custom-apply-onfire', async function (ev) {
+  async function handleToggle(ev) {
     ev.preventDefault();
     ev.stopPropagation();
 
@@ -19,9 +17,9 @@ console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight:
       return;
     }
 
-    const button = $(this);
-    const targetId = button.attr('data-target-id') || button.data('target-id');
-    const targetName = button.attr('data-target-name') || button.data('target-name');
+    const button = $(ev.currentTarget);
+    const targetId = button.attr("data-target-id") || button.data("target-id");
+    const targetName = button.attr("data-target-name") || button.data("target-name");
 
     if (!targetId) {
       ui.notifications.error("No target ID found on the button.");
@@ -34,33 +32,38 @@ console.log("%cSanctum Overheat Toggle | Loading", "color: #ff9500; font-weight:
       return;
     }
 
-    const statusId = "y4y0rvsz17aj0r4g"; // On Fire (Strong)
     const actor = target.actor;
-
     const alreadyOnFire = actor.effects.some(e =>
       !e.disabled &&
-      (e.statuses?.has(statusId) || e.name === "On Fire (Strong)")
+      (e.statuses?.has(STATUS_ID) || e.name === "On Fire (Strong)")
     );
 
     try {
       if (alreadyOnFire) {
-        // Turn OFF
-        await actor.toggleStatusEffect(statusId, { active: false });
+        await actor.toggleStatusEffect(STATUS_ID, { active: false });
         ui.notifications.info(`${target.name} is no longer On Fire`);
-        button.css({ opacity: "1", pointerEvents: "auto", color: "#ff9500" });
-        button.html(`<i class="fas fa-fire"></i>`);
+        button.css({ opacity: "1", color: "#ff9500" }).html(`<i class="fas fa-fire"></i>`);
       } else {
-        // Turn ON
-        await actor.toggleStatusEffect(statusId, { active: true });
+        await actor.toggleStatusEffect(STATUS_ID, { active: true });
         ui.notifications.info(`${target.name} is now On Fire (Strong)`);
-        button.css({ opacity: "0.7", color: "#39ff14" });
-        button.html(`<i class="fas fa-check"></i>`);
+        button.css({ opacity: "0.7", color: "#39ff14" }).html(`<i class="fas fa-check"></i>`);
       }
     } catch (err) {
       console.error("[Overheat Toggle] Failed:", err);
       ui.notifications.error("Failed to toggle On Fire (Strong).");
     }
-  });
+  }
 
-  console.log("%cSanctum Overheat Toggle | Ready", "color: #ff9500; font-weight: bold");
+  function register() {
+    Hooks.on("renderChatMessage", (message, html) => {
+      const btn = html.find(".custom-apply-onfire");
+      if (!btn.length) return;
+      btn.off("click").on("click", handleToggle);
+    });
+
+    console.log("%cSanctum Overheat Toggle | Ready", "color: #ff9500; font-weight: bold");
+  }
+
+  if (game.ready) register();
+  else Hooks.once("ready", register);
 })();
