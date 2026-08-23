@@ -2,7 +2,7 @@
   "id": "sanctum-cpr-hooks",
   "title": "Sanctum CPR Hooks",
   "description": "Ammo modifiers (High Precision, Tracer, Explosive), Machine Gun / Subcompact SMG / Machine Pistol Autofire DV, Aimed Total Mods cap, Diwako DV Display integration, Speedware Dodge Tracker, and On Fire end-of-turn damage for Cyberpunk RED. Multi-GM safe with shared locks and backward-round protection.",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "compatibility": {
     "minimum": "12",
     "verified": "12"
