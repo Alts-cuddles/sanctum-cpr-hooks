@@ -1,6 +1,5 @@
 // ============ RED LACE – DRUG ITEM SCRIPT ============
 const DRUG_NAME = "Red Lace";
-const EFFECT_NAME = "Red Lace Active";
 
 ["createActiveEffect", "updateActiveEffect", "deleteActiveEffect", "updateItem"].forEach(h => {
   if (window[`_redLace_${h}`] !== undefined) {
@@ -21,8 +20,7 @@ function effectName(e) {
 }
 
 function isRedLaceEffect(e) {
-  const n = effectName(e).toLowerCase();
-  return n.includes("red lace");
+  return effectName(e).toLowerCase().includes("red lace");
 }
 
 function getRedLaceState(actor) {
@@ -47,9 +45,15 @@ function getHumanityPosterId(actor) {
   return owners.sort((a, b) => a.id.localeCompare(b.id))[0].id;
 }
 
+function normalizeName(s) {
+  return (s || "")
+    .toLowerCase()
+    .replace(/^eq\s+/, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function getDamageDice(message) {
   const content = message.content || "";
-
   const fromSvg = [...content.matchAll(/d6_(\d)(_preem)?\.svg/g)].map(m => Number(m[1]));
   if (fromSvg.length) return fromSvg;
 
@@ -70,6 +74,11 @@ function getDamageDice(message) {
     }
   }
   return fromRolls;
+}
+
+function isRangedWeapon(item, title = "") {
+  const blob = `${item?.system?.weaponType || ""} ${item?.name || ""} ${title}`.toLowerCase();
+  return /pistol|smh|smg|rifle|shotgun|bow|sniper|launcher|grenade|autofire|machinegun|machine gun|subcompact/.test(blob);
 }
 
 async function applyRedLaceHumanity(actor, key) {
@@ -170,8 +179,7 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
     const content = message.content || "";
     const isDamageCard =
       content.includes("d6-rollcard-data") ||
-      content.includes("data-action=\"applyDamage\"") ||
-      /rollcard-subtitle-center[^>]*>\s*Damage\s*</i.test(content);
+      content.includes("data-action=\"applyDamage\"");
 
     if (!isDamageCard) return;
     if (/damage dealt to/i.test(content)) return;
@@ -182,41 +190,33 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
     if (!actor) return;
 
     const state = getRedLaceState(actor);
-    console.log("[Red Lace Crit] state", {
-      actor: actor.name,
-      active: state.active,
-      effect: state.effect?.name,
-      item: state.item?.name
-    });
     if (!state.active) return;
 
     const rawTitle = content.match(/chat-rollTitle-stat[\s\S]*?<div[^>]*>\s*([^<]+?)\s*<\/div>/i)?.[1]?.trim() || "";
-    const title = rawTitle.toLowerCase();
+    const titleNorm = normalizeName(rawTitle);
 
     const weapons = actor.items.filter(i => i.type === "weapon");
     const hit = weapons.find(i => {
-      const n = (i.name || "").toLowerCase();
-      return n && (title === n || title.includes(n) || n.includes(title.replace(/\s*\(.*\)\s*$/, "")));
+      const n = normalizeName(i.name);
+      return n && (titleNorm === n || titleNorm.includes(n) || n.includes(titleNorm));
     });
 
-    const type = (hit?.system?.weaponType || "").toLowerCase();
-    const isMelee =
-      /melee/i.test(type) ||
-      /melee/i.test(title) ||
-      /melee/i.test(hit?.name || "");
-
-    console.log("[Red Lace Crit] weapon", { rawTitle, hit: hit?.name, type, isMelee });
-    if (!isMelee) return;
+    const ranged = isRangedWeapon(hit, rawTitle);
+    console.log("[Red Lace Crit]", {
+      actor: actor.name,
+      rawTitle,
+      hit: hit?.name,
+      type: hit?.system?.weaponType,
+      ranged
+    });
+    if (ranged) return;
 
     const dice = getDamageDice(message);
-    console.log("[Red Lace Crit] dice", dice);
-
-    if (!dice.length) return;
-
     const sixes = dice.filter(v => v === 6).length;
     const high = dice.filter(v => v === 5 || v === 6).length;
-    console.log("[Red Lace Crit] sixes", sixes, "high", high);
+    console.log("[Red Lace Crit] dice", dice, { sixes, high });
 
+    if (!dice.length) return;
     if (sixes >= 2 || high < 2) return;
 
     let updated = content;
@@ -230,16 +230,12 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
     if (!/Critical Damage:/i.test(updated)) {
       updated = updated.replace(
         /(<div class="d6-data-div">\s*)/,
-        `$1<div class="text-normal text-semi">
-              Critical Damage:
-              5
-            </div>
-`
+        `$1<div class="text-normal text-semi">Critical Damage: 5</div>`
       );
       if (!/Critical Damage:/i.test(updated)) {
         updated = updated.replace(
-          /(data-action="applyDamage"[^>]*>[\s\S]*?<\/a>)/i,
-          `$1<div class="text-normal text-semi">Critical Damage: 5</div>`
+          /(<div class="d6-dice-div">)/,
+          `<div class="text-normal text-semi">Critical Damage: 5</div>$1`
         );
       }
     }
