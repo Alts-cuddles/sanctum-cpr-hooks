@@ -1,5 +1,5 @@
 // ========== SPEEDWARE DODGE TRACKER ==========
-// Module-safe + multi-GM lock + ignores backward rounds
+// The user who ran the activation macro owns the chat posts
 
 console.log("Sanctum Speedware Dodge Tracker | Loading...");
 
@@ -8,9 +8,19 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
   globalThis.sanctumSpeedwareRegistered = true;
 
   function createSpeedwareMessage(token, content, backgroundColor = "#1a1a1a") {
+    const actor = token?.actor;
     return ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ token }),
-      content: `<div class="cpr-block" style="padding:10px;background-color:${backgroundColor}">${content}</div>`,
+      type: "base",
+      style: 0,
+      whisper: [],
+      flavor: "",
+      speaker: {
+        scene: null,
+        actor: actor?.id ?? null,
+        token: null,
+        alias: token?.name || actor?.name || "System"
+      },
+      content: `<div class="cpr-block" style="padding:10px;background-color:${backgroundColor}">${content}</div>`
     }, { chatBubble: false });
   }
 
@@ -23,16 +33,13 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
 
   globalThis.sanctumSpeedwareDodgeHook = Hooks.on("updateCombat", async (combat, changed) => {
     if (changed.round === undefined) return;
-    if (!game.user.isGM) return;
 
-    // Ignore backward round movement
     const previousRound = combat.previous?.round;
     if (typeof previousRound === "number" && changed.round < previousRound) {
       return;
     }
 
     const currentRound = combat.round;
-    const announced = foundry.utils.duplicate(combat.getFlag("world", "speedwareAnnounced") || {});
 
     for (const combatant of combat.combatants) {
       const token = combatant.token;
@@ -42,21 +49,14 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
       const dodgeData = actor.getFlag("world", "speedwareDodge");
       if (!dodgeData) continue;
 
-      const key = `${combat.id}-${combatant.id}-${currentRound}`;
-      if (announced[key]) continue;
+      // Only the user who activated Speedware on this actor
+      if (dodgeData.ownerId !== game.user.id) continue;
 
-      // Claim lock first
-      announced[key] = game.user.id;
-      try {
-        await combat.setFlag("world", "speedwareAnnounced", announced);
-      } catch (err) {
-        return;
-      }
+      const lastRound = actor.getFlag("world", "speedwareLastRound");
+      if (lastRound === currentRound) continue;
+      await actor.setFlag("world", "speedwareLastRound", currentRound);
 
-      const fresh = combat.getFlag("world", "speedwareAnnounced") || {};
-      if (fresh[key] !== game.user.id) return;
-
-      let { name, remaining, max } = dodgeData;
+      let { name, remaining, max, ownerId } = dodgeData;
 
       if (remaining > 0) {
         await createSpeedwareMessage(
@@ -67,9 +67,10 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
         );
 
         remaining -= 1;
-        await actor.setFlag("world", "speedwareDodge", { name, remaining, max });
+        await actor.setFlag("world", "speedwareDodge", { name, remaining, max, ownerId });
       } else {
         await actor.unsetFlag("world", "speedwareDodge");
+        await actor.unsetFlag("world", "speedwareLastRound");
 
         const effect = actor.effects.find(e => e.getFlag("world", "isSpeedwareDodge"));
         if (effect) {
@@ -100,13 +101,12 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
   });
 
   globalThis.sanctumSpeedwareCombatEndHook = Hooks.on("combatEnd", async (combat) => {
-    if (!game.user.isGM) return;
-
     for (const combatant of combat.combatants) {
       const actor = combatant.actor;
-      if (!actor) continue;
+      if (!actor?.isOwner) continue;
 
       await actor.unsetFlag("world", "speedwareDodge");
+      await actor.unsetFlag("world", "speedwareLastRound");
 
       const effectsToRemove = actor.effects.filter(e =>
         e.getFlag("world", "isSpeedwareDodge") || e.getFlag("world", "isSpeedwareOut")
@@ -116,9 +116,7 @@ console.log("Sanctum Speedware Dodge Tracker | Loading...");
         await actor.deleteEmbeddedDocuments("ActiveEffect", effectsToRemove.map(e => e.id));
       }
     }
-
-    await combat.unsetFlag("world", "speedwareAnnounced");
   });
 
-  console.log("%cSpeedware Dodge Tracker ready (module-safe + multi-GM hardened)", "color: #0d4f5c; font-weight: bold;");
+  console.log("%cSpeedware ready (activator owns the chat posts)", "color: #0d4f5c; font-weight: bold;");
 })();

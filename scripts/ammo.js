@@ -1,4 +1,4 @@
-console.log("Sanctum Ammo Hooks 2.1 | Loading...");
+console.log("Sanctum Ammo Hooks 2.2 | Loading...");
 
 const ammoHookList = [
   "_explosiveDamageHookId",
@@ -20,7 +20,6 @@ ammoHookList.forEach(id => {
 if (!window._ammoHookProcessed) window._ammoHookProcessed = new WeakMap();
 if (!window._sanctumProcessed) window._sanctumProcessed = new Set();
 if (!window._explosiveProcessed) window._explosiveProcessed = new Set();
-if (!window._explosivePending) window._explosivePending = new Map();
 
 function getDiceValues(content) {
   const values = [];
@@ -46,25 +45,21 @@ function alreadyProcessed(id) {
   return false;
 }
 
-// Read the real selected fire mode from the weapon card DOM
 function getSelectedFireMode(itemId) {
   if (!itemId) return null;
   const checkboxes = document.querySelectorAll(`a.fire-checkbox[data-item-id="${itemId}"]`);
   for (const a of checkboxes) {
     const icon = a.querySelector("i");
     if (icon && icon.classList.contains("fa-circle-dot")) {
-      return a.dataset.fireMode; // "aimed" | "autofire" | "suppressive"
+      return a.dataset.fireMode;
     }
   }
   return null;
 }
 
-// Check if the actor qualifies for High Precision Ammo
-// Rule: Solo rank ≥ 1  OR  Weapon skill rank ≥ 7
 function canUseHighPrecision(actor, item) {
   if (!actor || !item) return false;
 
-  // 1. Check Solo role rank ≥ 1
   let soloRank = 0;
 
   const roleInfo = actor.system?.roleInfo;
@@ -73,16 +68,15 @@ function canUseHighPrecision(actor, item) {
       soloRank = roleInfo.rank ?? roleInfo.roleRank ?? roleInfo.value ?? 0;
     }
     if (roleInfo.roles) {
-      const solo = Object.values(roleInfo.roles).find(r => 
+      const solo = Object.values(roleInfo.roles).find(r =>
         (r.name || r.role || "").toLowerCase() === "solo"
       );
       if (solo) soloRank = solo.rank ?? solo.value ?? solo.level ?? 0;
     }
   }
 
-  // Fallback: Role item
   if (soloRank < 1) {
-    const soloItem = actor.items.find(i => 
+    const soloItem = actor.items.find(i =>
       i.type === "role" && i.name.toLowerCase() === "solo"
     );
     if (soloItem) {
@@ -95,14 +89,13 @@ function canUseHighPrecision(actor, item) {
     return true;
   }
 
-  // 2. Check the weapon’s associated skill rank ≥ 7
   const skillName = item.system?.weaponSkill || item.system?.skill || "";
   if (!skillName) {
     console.log("%c[High Precision] No weapon skill found on item", "color: orange");
     return false;
   }
 
-  const skillItem = actor.items.find(i => 
+  const skillItem = actor.items.find(i =>
     i.type === "skill" && i.name.toLowerCase() === skillName.toLowerCase()
   );
 
@@ -130,8 +123,69 @@ function canUseHighPrecision(actor, item) {
   return false;
 }
 
+function weaponHasExplosiveAmmo(actor, weaponName) {
+  if (!actor || !weaponName) return false;
+  const title = weaponName.toLowerCase().trim();
+
+  const weapons = actor.items.filter(i => i.type === "weapon");
+  const hit = weapons.find(i => {
+    const n = (i.name || "").toLowerCase();
+    return n && (title === n || title.includes(n) || n.includes(title.replace(/\s*\(.*\)\s*$/, "")));
+  });
+
+  const checkItem = (item) => {
+    if (!item) return false;
+    const installed = item.system?.installedItems?.list || [];
+    const ammoItems = installed
+      .map(id => actor.items.get(id))
+      .filter(a => a?.type === "ammo");
+    return ammoItems.some(a => a.system?.type === "explosive" || /explosive/i.test(a.name));
+  };
+
+  if (checkItem(hit)) return true;
+
+  return weapons.some(w =>
+    w.system?.equipped === "equipped" &&
+    checkItem(w) &&
+    (title.includes((w.name || "").toLowerCase()) || (w.name || "").toLowerCase().includes(title.replace(/\s*\(.*\)\s*$/, "")))
+  );
+}
+
+function applyExplosiveCritCard(content) {
+  let updated = content;
+
+  updated = updated.replace(
+    /(<a[^>]*data-action="applyDamage"[^>]*)>/g,
+    (full, openTag) => /data-bonus-damage="\d+"/.test(openTag)
+      ? openTag.replace(/data-bonus-damage="\d+"/, 'data-bonus-damage="5"') + ">"
+      : openTag + ' data-bonus-damage="5">'
+  );
+
+  if (!/Critical Damage:/i.test(updated)) {
+    updated = updated.replace(
+      /(<div class="d6-data-div">\s*)/,
+      `$1<div class="text-normal text-semi">
+              Critical Damage:
+              5
+            </div>
+`
+    );
+  }
+
+  updated = updated.replace(/icons\/dice\/black\/d6_6\.svg/g, "icons/dice/red/d6_6_preem.svg");
+
+  updated = updated.replace(
+    /<img([^>]*\bd6_5(?:_preem)?\.svg[^>]*)>/g,
+    '<span style="display:inline-block;border:2px solid #ffd700;border-radius:4px;"><img$1></span>'
+  );
+
+  return updated;
+}
+
 // ============================================================
-// EXPLOSIVE AMMO
+// EXPLOSIVE AMMO – Red Lace style crit card
+// 5s count as 6s. Normal 2+ natural 6s are ignored.
+// +5 is written onto the damage card itself.
 // ============================================================
 
 window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
@@ -145,122 +199,48 @@ window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
     }
 
     const content = message.content || "";
-    const lower = content.toLowerCase();
+    if (!content.includes("d6-rollcard-data")) return;
+    if (!/rollcard-subtitle-center[^>]*>\s*Damage\s*</i.test(content)) return;
+    if (/damage dealt to/i.test(content)) return;
+    if (/Critical Damage:/i.test(content)) return;
 
-    if (!/explosive/i.test(content)) return;
-    if (!content.includes("d6-rollcard-data") && !lower.includes("damage")) return;
-    if (content.includes("Explosive Critical")) return;
+    const actor = game.actors.get(message.speaker?.actor)
+      || canvas.tokens.get(message.speaker?.token)?.actor;
+    if (!actor) return;
 
-    const getDice = (html) => {
-      const values = [];
-      const regex = /d6_(\d)(_preem)?\.svg/g;
-      let match;
-      while ((match = regex.exec(html)) !== null) {
-        values.push(parseInt(match[1]));
-      }
-      if (values.length === 0) {
-        const numbers = [...html.matchAll(/>([1-6])</g)].map(m => parseInt(m[1]));
-        if (numbers.length >= 3) values.push(...numbers.slice(0, 6));
-      }
-      return values;
-    };
+    const rawTitle = content.match(/chat-rollTitle-stat[\s\S]*?<div[^>]*>\s*([^<]+?)\s*<\/div>/i)?.[1]?.trim() || "";
 
-    const dice = getDice(content);
+    const isExplosiveByText = /explosive/i.test(content) || /explosive/i.test(rawTitle);
+    const isExplosiveByItem = weaponHasExplosiveAmmo(actor, rawTitle);
+
+    if (!isExplosiveByText && !isExplosiveByItem) return;
+
+    const dice = [...content.matchAll(/d6_(\d)(_preem)?\.svg/g)].map(m => Number(m[1]));
     if (!dice.length) return;
 
     const sixes = dice.filter(v => v === 6).length;
-    const highDice = dice.filter(v => v >= 5).length;
+    const high = dice.filter(v => v === 5 || v === 6).length;
 
-    if (sixes >= 2) return;
-    if (highDice < 2) return;
+    if (sixes >= 2 || high < 2) return;
 
-    let targets = [...game.user.targets];
-    if (!targets.length) targets = canvas.tokens.placeables.filter(t => t.isTargeted);
-    if (!targets.length) {
-      return ui.notifications.warn("Explosive Ammo: No targets selected.");
-    }
+    const updated = applyExplosiveCritCard(content);
 
-    for (const token of targets) {
-      const actor = token.actor;
-      if (!actor) continue;
+    await message.update({ content: updated });
 
-      const hpPaths = [
-        "system.derivedStats.hp.value",
-        "system.stats.hp.value",
-        "system.hp.value"
-      ];
+    const el = document.querySelector(`li[data-message-id="${message.id}"]`);
+    const div = el?.querySelector(".message-content");
+    if (div) div.innerHTML = updated;
 
-      let hpPath, currentHP;
-      for (const p of hpPaths) {
-        const val = foundry.utils.getProperty(actor, p);
-        if (typeof val === "number") {
-          hpPath = p;
-          currentHP = val;
-          break;
-        }
-      }
-      if (!hpPath) continue;
-
-      window._explosivePending.set(actor.id, {
-        token,
-        actor,
-        hpPath,
-        lastSeenHP: currentHP,
-        bonusActive: false
-      });
-    }
-
-    ChatMessage.create({
-      speaker: message.speaker,
-      content: `<div class="cpr-block" style="padding:10px;background:#8b0000;border:1px solid #ff4444;">
-        <b style="color:#ff5555;">Explosive Critical</b><br>
-        5s count as 6s.<br>
-        <b>+5 applies after GM damage.<br>
-        Re-apply / revert supported.</b>
-      </div>`,
-      type: message.type,
-      whisper: message.whisper
-    }, { chatBubble: false });
-
+    console.log("%c[Explosive] Crit card updated (5s as 6s, +5 on apply)", "color: #ff5555; font-weight: bold", {
+      actor: actor.name,
+      title: rawTitle,
+      dice,
+      sixes,
+      high
+    });
   } catch (err) {
     console.error("[Sanctum] Explosive Crit error:", err);
   }
-});
-
-window._explosiveUpdateHookId = Hooks.on("updateActor", async (actor) => {
-  const data = window._explosivePending.get(actor.id);
-  if (!data) return;
-
-  const currentHP = foundry.utils.getProperty(actor, data.hpPath);
-  if (typeof currentHP !== "number") return;
-
-  const prev = data.lastSeenHP;
-
-  if (currentHP < prev && !data.bonusActive) {
-    data.bonusActive = true;
-    const newHP = Math.max(0, currentHP - 5);
-    await actor.update({ [data.hpPath]: newHP });
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ token: data.token }),
-      content: `<div class="cpr-block" style="padding:6px 10px;background:#5a0000;border:1px solid #ff4444;">
-        <b style="color:#ff5555;">Explosive</b> +5 applied to <b>${data.token.name}</b>
-      </div>`
-    });
-  }
-  else if (currentHP > prev && data.bonusActive) {
-    data.bonusActive = false;
-    await actor.update({ [data.hpPath]: currentHP + 5 });
-
-    ChatMessage.create({
-      speaker: ChatMessage.getSpeaker({ token: data.token }),
-      content: `<div class="cpr-block" style="padding:6px 10px;background:#333;border:1px solid #888;">
-        <b style="color:#aaa;">Explosive</b> +5 <b>reverted</b> on <b>${data.token.name}</b>
-      </div>`
-    });
-  }
-
-  data.lastSeenHP = foundry.utils.getProperty(actor, data.hpPath);
 });
 
 // ============================================================
@@ -304,13 +284,11 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
     const hasHighPrecision = ammoItems.some(a => a.system?.type === "highprecision" || /high.?precision/i.test(a.name));
     const hasExplosive = ammoItems.some(a => a.system?.type === "explosive" || /explosive/i.test(a.name));
 
-    // Real selected mode from the weapon card
     const selectedMode = getSelectedFireMode(item.id);
     const isSuppressive = selectedMode === "suppressive";
     const isAutofire = selectedMode === "autofire";
     const isAimed = selectedMode === "aimed";
 
-    // High Precision access check (Solo ≥ 1  OR  Weapon Skill ≥ 7)
     const precisionAllowed = hasHighPrecision ? canUseHighPrecision(actor, item) : false;
 
     console.log("%c[Sanctum FireMode]", "color: #00e5ff", {
@@ -330,7 +308,6 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
       let added = 0;
       const messages = [];
 
-      // High Precision – only if qualified and not Autofire/Suppressive
       if (hasHighPrecision && precisionAllowed && !isAutofire && !isSuppressive) {
         if (isAimed) {
           added += 2;
@@ -343,7 +320,6 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
         messages.push("High Precision Ammo: Requires Solo (any rank) or Weapon Skill 7+");
       }
 
-      // Tracer only on real Autofire
       if (hasTracer && isAutofire && !isSuppressive) {
         added += 1;
         messages.push("Tracer Ammo: +1 To Hit (Autofire)");
@@ -439,4 +415,4 @@ window._ammoReminderHookId = Hooks.on("createChatMessage", (message) => {
   }
 });
 
-console.log("Sanctum Ammo Hooks 2.1 | Ready");
+console.log("Sanctum Ammo Hooks 2.2 | Ready – Explosive uses Red Lace crit card");
