@@ -20,15 +20,23 @@ function effectName(e) {
   return (e?.name || "").trim();
 }
 
-function isRedLaceActiveEffect(e) {
-  return effectName(e).toLowerCase() === EFFECT_NAME.toLowerCase();
+function isRedLaceEffect(e) {
+  const n = effectName(e).toLowerCase();
+  return n.includes("red lace");
 }
 
 function getRedLaceState(actor) {
   if (!actor) return { item: null, effect: null, active: false };
-  const item = actor.items.find(i => i.type === "drug" && (i.name || "").trim() === DRUG_NAME);
-  const effect = item?.effects?.contents?.find(isRedLaceActiveEffect) || null;
-  return { item, effect, active: !!(effect && !effect.disabled) };
+
+  const item = actor.items.find(i =>
+    i.type === "drug" && (i.name || "").toLowerCase().includes("red lace")
+  );
+
+  const itemEffect = item?.effects?.contents?.find(e => isRedLaceEffect(e) && !e.disabled) || null;
+  const actorEffect = actor.effects?.find(e => isRedLaceEffect(e) && !e.disabled) || null;
+  const effect = itemEffect || actorEffect;
+
+  return { item, effect, active: !!effect };
 }
 
 function getHumanityPosterId(actor) {
@@ -39,13 +47,36 @@ function getHumanityPosterId(actor) {
   return owners.sort((a, b) => a.id.localeCompare(b.id))[0].id;
 }
 
+function getDamageDice(message) {
+  const content = message.content || "";
+
+  const fromSvg = [...content.matchAll(/d6_(\d)(_preem)?\.svg/g)].map(m => Number(m[1]));
+  if (fromSvg.length) return fromSvg;
+
+  const fromHtml = [
+    ...content.matchAll(/<(?:li|span)[^>]*class="[^"]*\b(?:roll\s+)?(?:die\s+)?d6\b[^"]*"[^>]*>\s*(\d+)\s*</gi),
+    ...content.matchAll(/data-die-result=["'](\d+)["']/gi)
+  ].map(m => Number(m[1])).filter(n => n >= 1 && n <= 6);
+  if (fromHtml.length) return fromHtml;
+
+  const fromRolls = [];
+  for (const roll of (message.rolls || [])) {
+    for (const term of roll.terms || []) {
+      if (term.faces === 6 && Array.isArray(term.results)) {
+        for (const r of term.results) {
+          if (r.active !== false) fromRolls.push(Number(r.result));
+        }
+      }
+    }
+  }
+  return fromRolls;
+}
+
 async function applyRedLaceHumanity(actor, key) {
   if (!actor) return;
   if (window._redLaceHumanityDone.has(key)) return;
   if (game.user.id !== getHumanityPosterId(actor)) return;
   window._redLaceHumanityDone.add(key);
-
-  console.log("%c[Red Lace] Humanity loss for", "color:lime;font-weight:bold", actor.name);
 
   const roll = await new Roll("1d6").evaluate({ async: true });
   const loss = roll.total;
@@ -89,7 +120,7 @@ async function applyRedLaceHumanity(actor, key) {
 }
 
 function handleEffectChange(effect, changes = {}) {
-  if (!isRedLaceActiveEffect(effect)) return;
+  if (!isRedLaceEffect(effect)) return;
 
   let actor = effect.parent;
   if (actor?.documentName === "Item") actor = actor.parent;
@@ -117,11 +148,11 @@ window._redLace_deleteActiveEffect = Hooks.on("deleteActiveEffect", (effect) => 
   if (actor?.documentName === "Actor") window._redLaceHumanityDone.delete(`${actor.id}-redlace`);
 });
 window._redLace_updateItem = Hooks.on("updateItem", (item) => {
-  if (item.type !== "drug" || (item.name || "").trim() !== DRUG_NAME) return;
+  if (item.type !== "drug" || !(item.name || "").toLowerCase().includes("red lace")) return;
   const actor = item.parent;
   if (actor?.documentName !== "Actor") return;
 
-  const fx = item.effects?.contents?.find(isRedLaceActiveEffect);
+  const fx = item.effects?.contents?.find(e => isRedLaceEffect(e));
   if (!fx) return;
 
   const key = `${actor.id}-redlace`;
@@ -137,30 +168,55 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
     window._redLaceProcessed.add(message.id);
 
     const content = message.content || "";
-    if (!content.includes("d6-rollcard-data")) return;
-    if (!/rollcard-subtitle-center[^>]*>\s*Damage\s*</i.test(content)) return;
+    const isDamageCard =
+      content.includes("d6-rollcard-data") ||
+      content.includes("data-action=\"applyDamage\"") ||
+      /rollcard-subtitle-center[^>]*>\s*Damage\s*</i.test(content);
+
+    if (!isDamageCard) return;
     if (/damage dealt to/i.test(content)) return;
     if (/Critical Damage:/i.test(content)) return;
 
     const actor = game.actors.get(message.speaker?.actor)
       || canvas.tokens.get(message.speaker?.token)?.actor;
+    if (!actor) return;
+
     const state = getRedLaceState(actor);
+    console.log("[Red Lace Crit] state", {
+      actor: actor.name,
+      active: state.active,
+      effect: state.effect?.name,
+      item: state.item?.name
+    });
     if (!state.active) return;
 
     const rawTitle = content.match(/chat-rollTitle-stat[\s\S]*?<div[^>]*>\s*([^<]+?)\s*<\/div>/i)?.[1]?.trim() || "";
     const title = rawTitle.toLowerCase();
-    const MELEE_TYPES = ["lightMelee", "medMelee", "heavyMelee", "vHeavyMelee"];
-    const hit = actor.items.find(i => {
-      if (i.type !== "weapon") return false;
+
+    const weapons = actor.items.filter(i => i.type === "weapon");
+    const hit = weapons.find(i => {
       const n = (i.name || "").toLowerCase();
       return n && (title === n || title.includes(n) || n.includes(title.replace(/\s*\(.*\)\s*$/, "")));
     });
-    if (!MELEE_TYPES.includes(hit?.system?.weaponType || "")) return;
 
-    const dice = [...content.matchAll(/d6_(\d)(_preem)?\.svg/g)].map(m => Number(m[1]));
+    const type = (hit?.system?.weaponType || "").toLowerCase();
+    const isMelee =
+      /melee/i.test(type) ||
+      /melee/i.test(title) ||
+      /melee/i.test(hit?.name || "");
+
+    console.log("[Red Lace Crit] weapon", { rawTitle, hit: hit?.name, type, isMelee });
+    if (!isMelee) return;
+
+    const dice = getDamageDice(message);
+    console.log("[Red Lace Crit] dice", dice);
+
     if (!dice.length) return;
+
     const sixes = dice.filter(v => v === 6).length;
     const high = dice.filter(v => v === 5 || v === 6).length;
+    console.log("[Red Lace Crit] sixes", sixes, "high", high);
+
     if (sixes >= 2 || high < 2) return;
 
     let updated = content;
@@ -170,12 +226,24 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
         ? openTag.replace(/data-bonus-damage="\d+"/, 'data-bonus-damage="5"') + ">"
         : openTag + ' data-bonus-damage="5">'
     );
+
     if (!/Critical Damage:/i.test(updated)) {
       updated = updated.replace(
         /(<div class="d6-data-div">\s*)/,
-        `$1<div class="text-normal text-semi">\n              Critical Damage:\n              5\n            </div>\n`
+        `$1<div class="text-normal text-semi">
+              Critical Damage:
+              5
+            </div>
+`
       );
+      if (!/Critical Damage:/i.test(updated)) {
+        updated = updated.replace(
+          /(data-action="applyDamage"[^>]*>[\s\S]*?<\/a>)/i,
+          `$1<div class="text-normal text-semi">Critical Damage: 5</div>`
+        );
+      }
     }
+
     updated = updated.replace(/icons\/dice\/black\/d6_6\.svg/g, "icons/dice/red/d6_6_preem.svg");
     updated = updated.replace(
       /<img([^>]*\bd6_5(?:_preem)?\.svg[^>]*)>/g,
@@ -186,6 +254,7 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
       const el = document.querySelector(`li[data-message-id="${message.id}"]`);
       const div = el?.querySelector(".message-content");
       if (div) div.innerHTML = updated;
+      console.log("%c[Red Lace Crit] card updated +5", "color:lime;font-weight:bold");
     });
   } catch (err) {
     console.error("Red Lace error:", err);
