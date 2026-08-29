@@ -2,7 +2,7 @@
 const DRUG_NAME = "Red Lace";
 const EFFECT_NAME = "Red Lace Active";
 
-["createActiveEffect","updateActiveEffect","deleteActiveEffect","updateItem"].forEach(h => {
+["createActiveEffect", "updateActiveEffect", "deleteActiveEffect", "updateItem"].forEach(h => {
   if (window[`_redLace_${h}`] !== undefined) {
     Hooks.off(h, window[`_redLace_${h}`]);
     delete window[`_redLace_${h}`];
@@ -31,11 +31,19 @@ function getRedLaceState(actor) {
   return { item, effect, active: !!(effect && !effect.disabled) };
 }
 
+function getHumanityPosterId(actor) {
+  const owners = game.users.filter(u =>
+    u.active && actor.testUserPermission(u, "OWNER")
+  );
+  if (!owners.length) return null;
+  return owners.sort((a, b) => a.id.localeCompare(b.id))[0].id;
+}
+
 async function applyRedLaceHumanity(actor, key) {
   if (!actor) return;
   if (window._redLaceHumanityDone.has(key)) return;
+  if (game.user.id !== getHumanityPosterId(actor)) return;
   window._redLaceHumanityDone.add(key);
-  if (!(game.user.isGM || actor.isOwner)) return;
 
   console.log("%c[Red Lace] Humanity loss for", "color:lime;font-weight:bold", actor.name);
 
@@ -62,13 +70,22 @@ async function applyRedLaceHumanity(actor, key) {
   if (actor.sheet?.rendered) actor.sheet.render(false);
 
   ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ actor }),
+    type: "base",
+    style: 0,
+    whisper: [],
+    flavor: "",
+    speaker: {
+      scene: null,
+      actor: actor.id,
+      token: null,
+      alias: actor.name
+    },
     content: `<div class="cpr-block" style="padding:10px;background-color:#4a0000;border:1px solid #ff4444;">
       <b style="color:#ff5555;">Red Lace – Humanity Loss</b><br>
       ${actor.name} loses <b>${loss}</b> Humanity (1d6).<br>
       Humanity: ${current} → <b>${next}</b>
     </div>`
-  });
+  }, { chatBubble: false });
 }
 
 function handleEffectChange(effect, changes = {}) {
@@ -81,40 +98,30 @@ function handleEffectChange(effect, changes = {}) {
   const key = `${actor.id}-redlace`;
   const nowDisabled = (typeof changes.disabled === "boolean") ? changes.disabled : effect.disabled;
 
-  console.log("[Red Lace] effect change", { actor: actor.name, disabled: nowDisabled, changes });
-
   if (nowDisabled) {
     window._redLaceHumanityDone.delete(key);
-    console.log(`[Red Lace] ${actor.name}: inactive`);
     return;
   }
   applyRedLaceHumanity(actor, key);
 }
 
 window._redLace_createActiveEffect = Hooks.on("createActiveEffect", (effect) => {
-  console.log("[Red Lace] createActiveEffect", effectName(effect), effect.parent?.name, effect.disabled);
   handleEffectChange(effect, { disabled: effect.disabled });
 });
-
 window._redLace_updateActiveEffect = Hooks.on("updateActiveEffect", (effect, changes) => {
-  console.log("[Red Lace] updateActiveEffect", effectName(effect), changes);
   handleEffectChange(effect, changes);
 });
-
 window._redLace_deleteActiveEffect = Hooks.on("deleteActiveEffect", (effect) => {
-  console.log("[Red Lace] deleteActiveEffect", effectName(effect));
   let actor = effect.parent;
   if (actor?.documentName === "Item") actor = actor.parent;
   if (actor?.documentName === "Actor") window._redLaceHumanityDone.delete(`${actor.id}-redlace`);
 });
-
 window._redLace_updateItem = Hooks.on("updateItem", (item) => {
   if (item.type !== "drug" || (item.name || "").trim() !== DRUG_NAME) return;
   const actor = item.parent;
   if (actor?.documentName !== "Actor") return;
 
   const fx = item.effects?.contents?.find(isRedLaceActiveEffect);
-  console.log("[Red Lace] updateItem Red Lace, Active disabled:", fx?.disabled);
   if (!fx) return;
 
   const key = `${actor.id}-redlace`;
@@ -153,7 +160,7 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
     const dice = [...content.matchAll(/d6_(\d)(_preem)?\.svg/g)].map(m => Number(m[1]));
     if (!dice.length) return;
     const sixes = dice.filter(v => v === 6).length;
-    const high  = dice.filter(v => v === 5 || v === 6).length;
+    const high = dice.filter(v => v === 5 || v === 6).length;
     if (sixes >= 2 || high < 2) return;
 
     let updated = content;
@@ -186,4 +193,6 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
 });
 
 console.log("%cRed Lace DRUG script LOADED", "color:lime;font-weight:bold;font-size:14px");
-ui.notifications.info("Red Lace drug script loaded");
+Hooks.once("ready", () => {
+  ui.notifications.info("Red Lace drug script loaded");
+});
