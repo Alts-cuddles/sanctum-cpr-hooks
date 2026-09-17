@@ -1,8 +1,8 @@
 {
   "id": "sanctum-cpr-hooks",
   "title": "Sanctum CPR Hooks",
-  "description": "Ammo modifiers (High Precision, Tracer, Explosive), Machine Gun / Subcompact SMG / Machine Pistol Autofire DV, Aimed Total Mods cap, Diwako DV Display integration, Speedware Dodge Tracker (activator-owned chat), On Fire end-of-turn damage, Overheat / MOVE toggles, and Red / Black / White Lace humanity for Cyberpunk RED.",
-  "version": "1.4.0",
+  "description": "Ammo modifiers (High Precision, Tracer, Explosive), Machine Gun / Subcompact SMG / Machine Pistol Autofire DV, Aimed Total Mods cap, Diwako DV Display integration, Speedware Dodge Tracker (activator-owned chat), On Fire end-of-turn damage, Overheat / MOVE toggles, Red / Black / White Lace humanity, and AA Weapon Binder for Cyberpunk RED.",
+  "version": "1.5.0",
   "compatibility": {
     "minimum": "12",
     "verified": "12"
@@ -16,6 +16,7 @@
   "esmodules": [
     "scripts/main.js"
   ],
+  "socket": true,
   "relationships": {
     "systems": [
       {
@@ -32,6 +33,14 @@
     "recommends": [
       {
         "id": "diwako-cpred-additions",
+        "type": "module"
+      },
+      {
+        "id": "autoanimations",
+        "type": "module"
+      },
+      {
+        "id": "sequencer",
         "type": "module"
       }
     ]
