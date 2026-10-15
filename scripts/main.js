@@ -10,7 +10,6 @@ import "./overheat.js";
 import "./redlace.js";
 import "./drugs.js";
 import "./slow.js";
-import "./weaponbinder.js";
 
 Hooks.once("ready", () => {
   ui.notifications.info("Sanctum CPR Hooks loaded", { permanent: false });
