@@ -150,42 +150,66 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
     return html?.[0] ?? app.element?.[0] ?? app.element;
   }
 
+  function findDvAnchor(host) {
+    const byName = host.querySelector('select[name="system.dvTable"]');
+    if (byName) return byName;
+    const labels = [...host.querySelectorAll("label, span, div, td, th, li")];
+    const label = labels.find((el) => /^\s*DV Table:?\s*$/i.test(el.textContent || ""));
+    if (label) {
+      const row = label.closest("tr, li, .form-group, .item, div");
+      const select = row?.querySelector("select");
+      if (select) return select;
+      return label;
+    }
+    return null;
+  }
+
   function inject(app, html) {
-    const item = app.document ?? app.item ?? app.object;
-    if (!item || item.type !== "weapon") return;
-    const host = hostOf(app, html);
-    if (!host) return;
-    host.querySelector("#world-autofire-dv-row")?.remove();
-    if (!hasAF(item)) return;
-    const dvSelect = host.querySelector('select[name="system.dvTable"]');
-    if (!dvSelect) return;
+    try {
+      const item = app.document ?? app.item ?? app.object;
+      if (!item || item.type !== "weapon") return;
+      const host = hostOf(app, html);
+      if (!host) return;
+      host.querySelector("#world-autofire-dv-row")?.remove();
+      if (!hasAF(item)) return;
 
-    const chosen = item.getFlag(FLAG_SCOPE, FLAG_KEY) || "";
-    const opts = ['<option value="">(pick one)</option>']
-      .concat(tableNames().map((n) =>
-        `<option value="${esc(n)}" ${n === chosen ? "selected" : ""}>${esc(n)}</option>`
-      )).join("");
+      const anchor = findDvAnchor(host);
+      if (!anchor) {
+        console.warn("[Sanctum AF DV] no DV Table anchor on", item.name);
+        return;
+      }
 
-    const wrap = document.createElement("div");
-    wrap.id = "world-autofire-dv-row";
-    wrap.style.cssText = "display:block;width:100%;flex-basis:100%;clear:both;margin:6px 0;";
-    wrap.innerHTML = `
-      <div style="display:grid;grid-template-columns:minmax(140px,auto) minmax(220px,1fr);align-items:center;column-gap:12px;width:100%;">
-        <span>Autofire DV Table:</span>
-        <select id="world-autofire-dv" style="width:100%;min-width:220px;box-sizing:border-box;">${opts}</select>
-      </div>`;
-    (dvSelect.closest("tr") || dvSelect.parentElement).after(wrap);
+      const chosen = item.getFlag(FLAG_SCOPE, FLAG_KEY) || "";
+      const opts = ['<option value="">(pick one)</option>']
+        .concat(tableNames().map((n) =>
+          `<option value="${esc(n)}" ${n === chosen ? "selected" : ""}>${esc(n)}</option>`
+        )).join("");
 
-    const sel = wrap.querySelector("#world-autofire-dv");
-    const w = dvSelect.getBoundingClientRect().width;
-    if (w > 50) sel.style.width = w + "px";
+      const wrap = document.createElement("div");
+      wrap.id = "world-autofire-dv-row";
+      wrap.style.cssText = "display:block;width:100%;clear:both;margin:6px 0;";
+      wrap.innerHTML = `
+        <div style="display:grid;grid-template-columns:minmax(140px,auto) minmax(220px,1fr);align-items:center;column-gap:12px;width:100%;">
+          <span>Autofire DV Table:</span>
+          <select id="world-autofire-dv" style="width:100%;min-width:220px;box-sizing:border-box;">${opts}</select>
+        </div>`;
 
-    sel.addEventListener("change", async (ev) => {
-      const val = ev.currentTarget.value;
-      if (val) await item.setFlag(FLAG_SCOPE, FLAG_KEY, val);
-      else await item.unsetFlag(FLAG_SCOPE, FLAG_KEY);
-      ui.notifications.info(item.name + ": Autofire DV = " + (val || "none"));
-    });
+      const row = anchor.closest("tr, li, .form-group") || anchor.parentElement;
+      (row || anchor).after(wrap);
+
+      const sel = wrap.querySelector("#world-autofire-dv");
+      const w = anchor.getBoundingClientRect?.().width;
+      if (w > 50) sel.style.width = w + "px";
+
+      sel.addEventListener("change", async (ev) => {
+        const val = ev.currentTarget.value;
+        if (val) await item.setFlag(FLAG_SCOPE, FLAG_KEY, val);
+        else await item.unsetFlag(FLAG_SCOPE, FLAG_KEY);
+        ui.notifications.info(item.name + ": Autofire DV = " + (val || "none"));
+      });
+    } catch (err) {
+      console.warn("[Sanctum AF DV] inject failed", err);
+    }
   }
 
   Hooks.on("renderItemSheet", inject);
