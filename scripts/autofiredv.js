@@ -9,9 +9,15 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
   const FLAG_SCOPE = "world";
   const FLAG_KEY = "autofireDvTable";
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&", "<": "<", ">": ">", '"': """, "'": "&#39;"
-  }[c]));
+
+  function esc(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
 
   function packId() {
     return game.cprWorld?.dvSourcePack
