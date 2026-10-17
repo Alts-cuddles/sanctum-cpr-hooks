@@ -151,14 +151,15 @@ function weaponHasExplosiveAmmo(actor, weaponName) {
   );
 }
 
-function applyExplosiveCritCard(content) {
+function applyExplosiveCritCard(content, bonus = 5) {
   let updated = content;
+  const b = String(bonus);
 
   updated = updated.replace(
     /(<a[^>]*data-action="applyDamage"[^>]*)>/g,
     (full, openTag) => /data-bonus-damage="\d+"/.test(openTag)
-      ? openTag.replace(/data-bonus-damage="\d+"/, 'data-bonus-damage="5"') + ">"
-      : openTag + ' data-bonus-damage="5">'
+      ? openTag.replace(/data-bonus-damage="\d+"/, `data-bonus-damage="${b}"`) + ">"
+      : openTag + ` data-bonus-damage="${b}">`
   );
 
   if (!/Critical Damage:/i.test(updated)) {
@@ -166,10 +167,12 @@ function applyExplosiveCritCard(content) {
       /(<div class="d6-data-div">\s*)/,
       `$1<div class="text-normal text-semi">
               Critical Damage:
-              5
+              ${b}
             </div>
 `
     );
+  } else {
+    updated = updated.replace(/Critical Damage:\s*\+?\d+/gi, `Critical Damage: ${b}`);
   }
 
   updated = updated.replace(/icons\/dice\/black\/d6_6\.svg/g, "icons/dice/red/d6_6_preem.svg");
@@ -223,9 +226,18 @@ window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
 
     if (sixes >= 2 || high < 2) return;
 
-    const updated = applyExplosiveCritCard(content);
+    const powerItem = actor.items.find(i =>
+      i.type === "weapon" &&
+      i.getFlag("world", "isPowerWeapon") &&
+      (rawTitle.toLowerCase().includes(i.name.toLowerCase()) ||
+       i.name.toLowerCase().includes(rawTitle.toLowerCase().replace(/\s*\(.*\)\s*$/, "")))
+    );
+    const bonus = powerItem ? 10 : 5;
+    const updated = applyExplosiveCritCard(content, bonus);
 
-    await message.update({ content: updated });
+    const updateData = { content: updated };
+    if (powerItem) updateData["flags.world.powerCrit"] = true;
+    await message.update(updateData);
 
     const el = document.querySelector(`li[data-message-id="${message.id}"]`);
     const div = el?.querySelector(".message-content");

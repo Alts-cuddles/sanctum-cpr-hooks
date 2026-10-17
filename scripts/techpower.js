@@ -113,7 +113,12 @@ function injectCharged(app, html) {
   });
 }
 
+function normalize(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 function isPowerWeaponContent(content, speakerId) {
+  const normContent = normalize(content);
   const candidates = [];
   if (speakerId) {
     const a = game.actors.get(speakerId);
@@ -125,7 +130,8 @@ function isPowerWeaponContent(content, speakerId) {
     for (const item of actor.items) {
       if (item.type !== "weapon") continue;
       if (!item.getFlag(SCOPE, "isPowerWeapon")) continue;
-      if (content.includes(item.name)) return true;
+      const n = normalize(item.name);
+      if (n && normContent.includes(n)) return true;
     }
   }
   return false;
@@ -135,28 +141,32 @@ function lastCritIsPower() {
   const msgs = game.messages.contents.slice().reverse();
   for (const msg of msgs) {
     const c = msg.content || "";
-    if (!/Critical Damage/i.test(c) && !/data-bonus-damage="10"/.test(c)) continue;
+    if (!/Critical Damage/i.test(c) && !/data-bonus-damage/.test(c)) continue;
     if (/HP Reduced By/i.test(c) || /Damage Dealt To/i.test(c)) continue;
-    if (msg.getFlag(SCOPE, "powerCrit") || /Critical Damage:\s*\+?10/i.test(c) || /data-bonus-damage="10"/.test(c)) return true;
+    if (msg.getFlag(SCOPE, "powerCrit")) return true;
+    if (/Critical Damage:\s*\+?10/i.test(c) || /data-bonus-damage="10"/.test(c)) return true;
     return false;
   }
   return false;
 }
 
-function stampPowerCrit(message, data, content) {
+async function upgradePowerCrit(message) {
+  const content = message.content || "";
+  if (/HP Reduced By/i.test(content) || /Damage Dealt To/i.test(content)) return;
+  if (!/Critical Damage/i.test(content) && !/data-bonus-damage="5"/.test(content)) return;
+  if (message.getFlag(SCOPE, "powerCrit")) return;
+
+  const speakerId = message.speaker?.actor;
+  if (!isPowerWeaponContent(content, speakerId)) return;
+
   const next = content
     .replace(/Critical Damage:\s*\+?5/gi, "Critical Damage: +10")
     .replace(/data-bonus-damage="5"/g, 'data-bonus-damage="10"');
 
-  if (data) {
-    data.content = next;
-    const flags = foundry.utils.duplicate(data.flags || message.flags || {});
-    flags[SCOPE] = flags[SCOPE] || {};
-    flags[SCOPE].powerCrit = true;
-    data.flags = flags;
-    if (message.updateSource) message.updateSource({ content: next, flags });
-  }
-  return next;
+  await message.update({
+    content: next,
+    [`flags.${SCOPE}.powerCrit`]: true
+  });
 }
 
 function register() {
@@ -178,7 +188,6 @@ function register() {
   globalThis._cprChargedHook = Hooks.on("renderActorSheet", (app, html) => injectCharged(app, html));
   Hooks.on("renderActorSheetV2", (app, html) => injectCharged(app, html));
 
-  // Normal crit cards (preCreate)
   if (globalThis._powerDisplayHook) Hooks.off("preCreateChatMessage", globalThis._powerDisplayHook);
   globalThis._powerDisplayHook = Hooks.on("preCreateChatMessage", (message, data) => {
     let content = data.content || message.content || "";
@@ -188,30 +197,28 @@ function register() {
     const speakerId = message.speaker?.actor || data.speaker?.actor;
     if (!isPowerWeaponContent(content, speakerId)) return;
 
-    stampPowerCrit(message, data, content);
-  });
-
-  // Explosive ammo crits (created then updated by ammo.js)
-  if (globalThis._powerExplosiveHook) Hooks.off("updateChatMessage", globalThis._powerExplosiveHook);
-  globalThis._powerExplosiveHook = Hooks.on("updateChatMessage", (message, changes) => {
-    const content = changes.content || message.content || "";
-    if (/HP Reduced By/i.test(content) || /Damage Dealt To/i.test(content)) return;
-    if (!/Critical Damage/i.test(content) && !/data-bonus-damage="5"/.test(content)) return;
-    if (message.getFlag(SCOPE, "powerCrit")) return;
-
-    const speakerId = message.speaker?.actor;
-    if (!isPowerWeaponContent(content, speakerId)) return;
-
-    const next = content
+    content = content
       .replace(/Critical Damage:\s*\+?5/gi, "Critical Damage: +10")
       .replace(/data-bonus-damage="5"/g, 'data-bonus-damage="10"');
+    data.content = content;
 
-    if (next !== content) {
-      message.update({
-        content: next,
-        [`flags.${SCOPE}.powerCrit`]: true
-      });
-    }
+    const flags = foundry.utils.duplicate(data.flags || message.flags || {});
+    flags[SCOPE] = flags[SCOPE] || {};
+    flags[SCOPE].powerCrit = true;
+    data.flags = flags;
+    if (message.updateSource) message.updateSource({ content, flags });
+  });
+
+  // Catch explosive ammo updates (and any late rewrites)
+  if (globalThis._powerExplosiveHook) Hooks.off("updateChatMessage", globalThis._powerExplosiveHook);
+  globalThis._powerExplosiveHook = Hooks.on("updateChatMessage", (message) => {
+    upgradePowerCrit(message);
+  });
+
+  if (globalThis._powerCreateHook) Hooks.off("createChatMessage", globalThis._powerCreateHook);
+  globalThis._powerCreateHook = Hooks.on("createChatMessage", (message) => {
+    // Delay so explosive ammo hook can finish its update first
+    setTimeout(() => upgradePowerCrit(message), 300);
   });
 
   const ActorClass = CONFIG.Actor.documentClass;
@@ -225,7 +232,7 @@ function register() {
     };
   }
 
-  console.log("%cSanctum Tech/Power Rebuild | Ready (incl. explosive)", "color: #ff6b00; font-weight: bold");
+  console.log("%cSanctum Tech/Power Rebuild | Ready (explosive + flag)", "color: #ff6b00; font-weight: bold");
 }
 
 if (game.ready) register();
