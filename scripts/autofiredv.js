@@ -1,6 +1,6 @@
 // Sanctum Autofire DV
-// Replaces machinegun.js, machinepistol.js, subcompactsmg.js, and the old hardcoded dvDisplay.js.
-// Injects the Autofire DV Table dropdown and makes Diwako use the flag live.
+// Injects the Autofire DV Table dropdown and forces Diwako's hover
+// to use the selected flag instead of the normal DV Table.
 
 console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
@@ -12,10 +12,10 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
   function esc(s) {
     return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, """)
       .replace(/'/g, "&#39;");
   }
 
@@ -63,9 +63,9 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
     return game.tables.getName(name) || null;
   }
 
-  function dvFromTable(table, dist) {
+  function dvAt(table, dist) {
+    if (!table) return -1;
     const d = Number(dist);
-    const rows = [];
     for (const r of table.results) {
       let a, b;
       if (Array.isArray(r.range) && r.range.length >= 2) {
@@ -77,59 +77,71 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
         a = Number(m[1]);
         b = Number(m[2]);
       }
-      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-      rows.push({ a, b, text: r.text, mid: (a + b) / 2 });
       if (d >= Math.min(a, b) && d <= Math.max(a, b)) {
         const n = parseInt(r.text, 10);
-        if (Number.isFinite(n)) return n;
+        return Number.isFinite(n) ? n : -1;
       }
     }
-    if (!rows.length) return -1;
-    rows.sort((x, y) => Math.abs(d - x.mid) - Math.abs(d - y.mid));
-    const n = parseInt(rows[0].text, 10);
-    return Number.isFinite(n) ? n : -1;
+    return -1;
   }
 
-  function getChosenAfName() {
-    const actors = [
-      ...canvas.tokens.controlled.map((t) => t.actor),
-      canvas.tokens.hover?.actor
-    ].filter(Boolean);
-    for (const a of actors) {
-      for (const w of a.items) {
-        if (w.type !== "weapon" || !hasAF(w)) continue;
-        const flag = w.getFlag(FLAG_SCOPE, FLAG_KEY);
-        if (flag) return flag;
-      }
-    }
-    return null;
-  }
-
-  async function patchDiwako() {
+  function getDistance(a, b) {
     try {
-      const mod = await import("/modules/diwako-cpred-additions/scripts/utils.js");
-      if (!mod?.Utils?.getDV) return false;
-      if (mod.Utils.__cprAfPatched) return true;
-      mod.Utils.getDV = async function (dvTable, dist) {
-        let name = dvTable;
-        if (dvTable && /autofire/i.test(dvTable)) {
-          const chosen = getChosenAfName();
-          if (chosen) name = chosen;
-        }
-        const table = await loadTable(name);
-        if (!table) {
-          console.warn("AF DV: no table", name);
-          return -1;
-        }
-        return dvFromTable(table, dist);
-      };
-      mod.Utils.__cprAfPatched = true;
-      console.log("AF DV: Diwako uses Autofire DV flag");
-      return true;
-    } catch (err) {
-      console.warn("AF DV: Diwako patch failed", err);
+      return canvas.grid.measurePath([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]).distance;
+    } catch {
+      return 0;
+    }
+  }
+
+  function forceHover() {
+    const proto = Token.prototype;
+    if (!proto.showDVDisplay) {
+      console.warn("[Sanctum AF DV] Diwako showDVDisplay not found");
       return false;
     }
+    if (proto.__cprAfForced) return true;
+
+    const orig = proto.showDVDisplay;
+    proto.showDVDisplay = async function (...args) {
+      await orig.apply(this, args);
+      try {
+        const controlled = canvas.tokens.controlled[0];
+        if (!controlled?.actor || controlled === this) return;
+        const display = this.dvDisplay;
+        if (!display) return;
+        const textObj = display.children.find((c) => c && typeof c.text === "string");
+        if (!textObj) return;
+
+        const dist = getDistance(controlled, this);
+        const lines = (textObj.text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+        const kept = lines.filter((l) => !/\(Autofire\)/i.test(l));
+
+        for (const w of controlled.actor.items) {
+          if (w.type !== "weapon") continue;
+          if (w.system?.equipped !== "equipped") continue;
+          const flag = w.getFlag(FLAG_SCOPE, FLAG_KEY);
+          if (!flag) continue;
+          const table = await loadTable(flag);
+          const dv = dvAt(table, dist);
+          if (dv < 0) continue;
+          kept.push(`DV: ${dv} ${w.name} (Autofire)`);
+        }
+
+        kept.sort((a, b) => {
+          const da = parseInt(a.match(/DV:\s*(\d+)/)?.[1] || "999", 10);
+          const db = parseInt(b.match(/DV:\s*(\d+)/)?.[1] || "999", 10);
+          return da - db;
+        });
+
+        textObj.text = kept.join("\n");
+      } catch (err) {
+        console.warn("[Sanctum AF DV] hover rewrite failed", err);
+      }
+    };
+
+    proto.__cprAfForced = true;
+    console.log("%c[Sanctum AF DV] Hover forced to selected table", "color: #0f0");
+    return true;
   }
 
   function hostOf(app, html) {
@@ -186,18 +198,16 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
   window.__cprAfDvInit = true;
 
   const start = () => {
-    patchDiwako().then((ok) => {
-      const apps = [
-        ...Object.values(ui.windows ?? {}),
-        ...(foundry.applications?.instances ? [...foundry.applications.instances.values()] : [])
-      ];
-      for (const app of apps) {
-        const it = app.document ?? app.item;
-        if (it?.type === "weapon") inject(app, app.element);
-      }
-      if (ok) console.log("%c[Sanctum AF DV] Ready. Hover uses the table you pick.", "color: #0f0");
-      else console.warn("[Sanctum AF DV] Dropdown ready. Diwako patch failed.");
-    });
+    forceHover();
+    const apps = [
+      ...Object.values(ui.windows ?? {}),
+      ...(foundry.applications?.instances ? [...foundry.applications.instances.values()] : [])
+    ];
+    for (const app of apps) {
+      const it = app.document ?? app.item;
+      if (it?.type === "weapon") inject(app, app.element);
+    }
+    console.log("%c[Sanctum AF DV] Ready", "color: #0f0");
   };
 
   if (game.ready) start();
