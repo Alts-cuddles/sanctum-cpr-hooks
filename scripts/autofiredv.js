@@ -1,8 +1,4 @@
-// Sanctum Autofire DV
-// Injects the Autofire DV Table dropdown and forces Diwako's hover
-// to use the selected flag instead of the normal DV Table.
-
-console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
+console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
 
 (() => {
   if (window.__cprAfDvInit) return;
@@ -12,18 +8,19 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
   function esc(s) {
     return String(s ?? "")
-      .replace(/&/g, "&")
-      .replace(/</g, "<")
-      .replace(/>/g, ">")
-      .replace(/"/g, """)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
   }
 
   function packId() {
-    return game.cprWorld?.dvSourcePack
-      || (game.settings.settings.has("world.cprAfDvPack") && game.settings.get("world", "cprAfDvPack"))
-      || game.settings.get("cyberpunk-red-core", "dvRollTableCompendium")
-      || "";
+    try {
+      return game.settings.get("cyberpunk-red-core", "dvRollTableCompendium") || "";
+    } catch {
+      return "";
+    }
   }
 
   function hasAF(item) {
@@ -32,9 +29,6 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
   }
 
   function tableNames() {
-    if (Array.isArray(game.cprWorld?.allowedAfTables) && game.cprWorld.allowedAfTables.length) {
-      return game.cprWorld.allowedAfTables.filter((n) => /autofire/i.test(n));
-    }
     const names = [];
     const seen = new Set();
     const add = (n) => {
@@ -95,12 +89,7 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
   function forceHover() {
     const proto = Token.prototype;
-    if (!proto.showDVDisplay) {
-      console.warn("[Sanctum AF DV] Diwako showDVDisplay not found");
-      return false;
-    }
-    if (proto.__cprAfForced) return true;
-
+    if (!proto.showDVDisplay || proto.__cprAfForced) return;
     const orig = proto.showDVDisplay;
     proto.showDVDisplay = async function (...args) {
       await orig.apply(this, args);
@@ -111,57 +100,35 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
         if (!display) return;
         const textObj = display.children.find((c) => c && typeof c.text === "string");
         if (!textObj) return;
-
         const dist = getDistance(controlled, this);
         const lines = (textObj.text || "").split("\n").map((l) => l.trim()).filter(Boolean);
         const kept = lines.filter((l) => !/\(Autofire\)/i.test(l));
-
         for (const w of controlled.actor.items) {
-          if (w.type !== "weapon") continue;
-          if (w.system?.equipped !== "equipped") continue;
+          if (w.type !== "weapon" || w.system?.equipped !== "equipped") continue;
           const flag = w.getFlag(FLAG_SCOPE, FLAG_KEY);
           if (!flag) continue;
           const table = await loadTable(flag);
           const dv = dvAt(table, dist);
           if (dv < 0) continue;
-          kept.push(`DV: ${dv} ${w.name} (Autofire)`);
+          kept.push("DV: " + dv + " " + w.name + " (Autofire)");
         }
-
         kept.sort((a, b) => {
           const da = parseInt(a.match(/DV:\s*(\d+)/)?.[1] || "999", 10);
           const db = parseInt(b.match(/DV:\s*(\d+)/)?.[1] || "999", 10);
           return da - db;
         });
-
         textObj.text = kept.join("\n");
       } catch (err) {
-        console.warn("[Sanctum AF DV] hover rewrite failed", err);
+        console.warn("[Sanctum AF DV] hover failed", err);
       }
     };
-
     proto.__cprAfForced = true;
-    console.log("%c[Sanctum AF DV] Hover forced to selected table", "color: #0f0");
-    return true;
   }
 
   function hostOf(app, html) {
     if (html?.jquery) return html[0];
     if (html instanceof HTMLElement) return html;
     return html?.[0] ?? app.element?.[0] ?? app.element;
-  }
-
-  function findDvAnchor(host) {
-    const byName = host.querySelector('select[name="system.dvTable"]');
-    if (byName) return byName;
-    const labels = [...host.querySelectorAll("label, span, div, td, th, li")];
-    const label = labels.find((el) => /^\s*DV Table:?\s*$/i.test(el.textContent || ""));
-    if (label) {
-      const row = label.closest("tr, li, .form-group, .item, div");
-      const select = row?.querySelector("select");
-      if (select) return select;
-      return label;
-    }
-    return null;
   }
 
   function inject(app, html) {
@@ -172,33 +139,27 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
       if (!host) return;
       host.querySelector("#world-autofire-dv-row")?.remove();
       if (!hasAF(item)) return;
-
-      const anchor = findDvAnchor(host);
-      if (!anchor) {
-        console.warn("[Sanctum AF DV] no DV Table anchor on", item.name);
-        return;
-      }
+      const anchor = host.querySelector('select[name="system.dvTable"]');
+      if (!anchor) return;
 
       const chosen = item.getFlag(FLAG_SCOPE, FLAG_KEY) || "";
       const opts = ['<option value="">(pick one)</option>']
         .concat(tableNames().map((n) =>
-          `<option value="${esc(n)}" ${n === chosen ? "selected" : ""}>${esc(n)}</option>`
+          '<option value="' + esc(n) + '"' + (n === chosen ? " selected" : "") + ">" + esc(n) + "</option>"
         )).join("");
 
       const wrap = document.createElement("div");
       wrap.id = "world-autofire-dv-row";
       wrap.style.cssText = "display:block;width:100%;clear:both;margin:6px 0;";
-      wrap.innerHTML = `
-        <div style="display:grid;grid-template-columns:minmax(140px,auto) minmax(220px,1fr);align-items:center;column-gap:12px;width:100%;">
-          <span>Autofire DV Table:</span>
-          <select id="world-autofire-dv" style="width:100%;min-width:220px;box-sizing:border-box;">${opts}</select>
-        </div>`;
-
-      const row = anchor.closest("tr, li, .form-group") || anchor.parentElement;
-      (row || anchor).after(wrap);
+      wrap.innerHTML =
+        '<div style="display:grid;grid-template-columns:minmax(140px,auto) minmax(220px,1fr);align-items:center;column-gap:12px;width:100%;">' +
+        '<span>Autofire DV Table:</span>' +
+        '<select id="world-autofire-dv" style="width:100%;min-width:220px;box-sizing:border-box;">' + opts + "</select>" +
+        "</div>";
+      (anchor.closest("tr, li, .form-group") || anchor.parentElement).after(wrap);
 
       const sel = wrap.querySelector("#world-autofire-dv");
-      const w = anchor.getBoundingClientRect?.().width;
+      const w = anchor.getBoundingClientRect().width;
       if (w > 50) sel.style.width = w + "px";
 
       sel.addEventListener("change", async (ev) => {
@@ -223,14 +184,6 @@ console.log("%c[Sanctum AF DV] Loading", "color: #0f0; font-weight: bold");
 
   const start = () => {
     forceHover();
-    const apps = [
-      ...Object.values(ui.windows ?? {}),
-      ...(foundry.applications?.instances ? [...foundry.applications.instances.values()] : [])
-    ];
-    for (const app of apps) {
-      const it = app.document ?? app.item;
-      if (it?.type === "weapon") inject(app, app.element);
-    }
     console.log("%c[Sanctum AF DV] Ready", "color: #0f0");
   };
 
