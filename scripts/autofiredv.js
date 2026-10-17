@@ -8,10 +8,10 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
 
   function esc(s) {
     return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">")
+      .replace(/"/g, """)
       .replace(/'/g, "&#39;");
   }
 
@@ -84,6 +84,51 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
       return canvas.grid.measurePath([{ x: a.x, y: a.y }, { x: b.x, y: b.y }]).distance;
     } catch {
       return 0;
+    }
+  }
+
+  function lastRolledWeapon() {
+    const msgs = game.messages.contents.slice().reverse();
+    const actors = canvas.tokens.controlled.map((t) => t.actor).filter(Boolean);
+    const weapons = actors.flatMap((a) => a.items.filter((i) => i.type === "weapon"));
+    for (const m of msgs) {
+      const text = m.content || "";
+      if (!/Autofire|Tracer|Skill/i.test(text)) continue;
+      for (const w of weapons) {
+        if (text.includes(w.name)) return w;
+      }
+    }
+    return null;
+  }
+
+  async function patchDiwako() {
+    try {
+      const mod = await import("/modules/diwako-cpred-additions/scripts/utils.js");
+      if (!mod?.Utils?.getDV) return false;
+      if (mod.Utils.__cprAfPatched) return true;
+      mod.Utils.getDV = async function (dvTable, dist) {
+        let name = dvTable;
+        if (/autofire/i.test(dvTable || "")) {
+          const w = lastRolledWeapon();
+          const flag = w?.getFlag(FLAG_SCOPE, FLAG_KEY);
+          if (flag) {
+            name = flag;
+            console.log("[AF DV] rolled", w.name, "→ using", flag, "instead of", dvTable);
+          }
+        }
+        const table = await loadTable(name);
+        if (!table) {
+          console.warn("[AF DV] no table", name);
+          return -1;
+        }
+        return dvAt(table, dist);
+      };
+      mod.Utils.__cprAfPatched = true;
+      console.log("%c[Sanctum AF DV] Diwako getDV patched (card uses rolled weapon)", "color: #0f0");
+      return true;
+    } catch (err) {
+      console.warn("[AF DV] Diwako patch failed", err);
+      return false;
     }
   }
 
@@ -184,6 +229,7 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
 
   const start = () => {
     forceHover();
+    patchDiwako();
     console.log("%c[Sanctum AF DV] Ready", "color: #0f0");
   };
 
