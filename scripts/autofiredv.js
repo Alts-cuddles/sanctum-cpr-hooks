@@ -7,12 +7,13 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
   const FLAG_KEY = "autofireDvTable";
 
   function esc(s) {
-    return String(s ?? "")
-      .replace(/&/g, "&")
-      .replace(/</g, "<")
-      .replace(/>/g, ">")
-      .replace(/"/g, """)
-      .replace(/'/g, "&#39;");
+    return String(s ?? "").replace(/[&<>"']/g, function (c) {
+      if (c === "&") return "&" + "amp;";
+      if (c === "<") return "&" + "lt;";
+      if (c === ">") return "&" + "gt;";
+      if (c === '"') return "&" + "quot;";
+      return "&" + "#39;";
+    });
   }
 
   function packId() {
@@ -113,7 +114,7 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
           const flag = w?.getFlag(FLAG_SCOPE, FLAG_KEY);
           if (flag) {
             name = flag;
-            console.log("[AF DV] rolled", w.name, "→ using", flag, "instead of", dvTable);
+            console.log("[AF DV] rolled", w.name, "-> using", flag, "instead of", dvTable);
           }
         }
         const table = await loadTable(name);
