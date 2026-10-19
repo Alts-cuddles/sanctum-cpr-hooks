@@ -1,6 +1,7 @@
 // ============================================
 // Sanctum - On Fire Damage (End of Turn Only)
 // Module-safe + lock-based (no duplicates)
+// Posts from the user who controls the burning token
 // Ignores backward rounds
 // ============================================
 
@@ -17,8 +18,21 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
   globalThis.sanctumLastCombatantId = null;
   globalThis.sanctumLastRound = null;
 
+  function primaryOwnerId(actor) {
+    const owners = game.users.filter((u) =>
+      u.active && actor.testUserPermission(u, "OWNER")
+    );
+    if (!owners.length) return null;
+    const player = owners.find((u) => !u.isGM);
+    return (player || owners.sort((a, b) => a.id.localeCompare(b.id))[0]).id;
+  }
+
+  function iControl(token, actor) {
+    if (canvas.tokens.controlled.some((t) => t.id === token.id)) return true;
+    return game.user.id === primaryOwnerId(actor);
+  }
+
   globalThis.sanctumOnFireHook = async (combat, changed) => {
-    if (!game.user.isGM) return;
     if (!("turn" in changed) && !("round" in changed)) return;
 
     const currentRound = combat.round ?? 0;
@@ -38,6 +52,16 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     if (!finishedId) return;
     if (finishedId === currentCombatantId) return;
 
+    const combatant = combat.combatants.get(finishedId);
+    if (!combatant?.token) return;
+
+    const token = combatant.token.object ?? canvas.tokens.get(combatant.token.id);
+    if (!token?.actor) return;
+
+    const actor = token.actor;
+
+    if (!iControl(token, actor)) return;
+
     const lockKey = `${combat.id}-${finishedId}-${currentRound}`;
     const announced = foundry.utils.duplicate(combat.getFlag("world", "onFireAnnounced") || {});
 
@@ -53,14 +77,6 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     const fresh = combat.getFlag("world", "onFireAnnounced") || {};
     if (fresh[lockKey] !== game.user.id) return;
 
-    const combatant = combat.combatants.get(finishedId);
-    if (!combatant?.token) return;
-
-    const token = combatant.token.object ?? canvas.tokens.get(combatant.token.id);
-    if (!token?.actor) return;
-
-    const actor = token.actor;
-
     const FIRE_EFFECTS = {
       "On Fire (Mild)": 2,
       "On Fire (Strong)": 4,
@@ -71,7 +87,7 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     let intensity = null;
 
     for (const [name, dmg] of Object.entries(FIRE_EFFECTS)) {
-      const hasEffect = actor.effects.some(e =>
+      const hasEffect = actor.effects.some((e) =>
         !e.disabled && e.name.toLowerCase() === name.toLowerCase()
       );
       if (hasEffect) {
@@ -126,5 +142,5 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     await combat.unsetFlag("world", "onFireAnnounced");
   });
 
-  console.log("%cSanctum On Fire | Ready (module-safe + lock-protected)", "color: #ff6b00; font-weight: bold");
+  console.log("%cSanctum On Fire | Ready (controller posts, lock-protected)", "color: #ff6b00; font-weight: bold");
 })();

@@ -40,7 +40,8 @@ async function applyBWHumanity(actor, label, key) {
   if (game.user.id !== getHumanityPosterId(actor)) return;
   window._bwLaceDone.add(key);
 
-  const roll = await new Roll("1d6").evaluate({ async: true });
+  const formula = label === "Black Lace" ? "2d6" : "1d6";
+  const roll = await new Roll(formula).evaluate({ async: true });
   const loss = roll.total;
   if (game.dice3d) await game.dice3d.showForRoll(roll, game.user, true);
 
@@ -71,7 +72,7 @@ async function applyBWHumanity(actor, label, key) {
     },
     content: `<div class="cpr-block" style="padding:10px;background-color:#2a1a4a;border:1px solid #b388ff;">
       <b style="color:#ce93d8;">${label} – Humanity Loss</b><br>
-      ${actor.name} loses <b>${loss}</b> Humanity (1d6).<br>
+      ${actor.name} loses <b>${loss}</b> Humanity (${formula}).<br>
       Humanity: ${current} → <b>${next}</b>
     </div>`
   }, { chatBubble: false });

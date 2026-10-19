@@ -133,6 +133,74 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
     }
   }
 
+  // Diwako returns early when system.dvTable is empty.
+  // Post the card ourselves from the Autofire flag in that case.
+  function fallbackCard() {
+    if (window.__cprAfDvFallback) return;
+    window.__cprAfDvFallback = true;
+    Hooks.on("createChatMessage", async (message) => {
+      try {
+        if (game.userId !== (message.author?.id || message.user?.id)) return;
+        const div = document.createElement("div");
+        div.innerHTML = message.content || "";
+        const isAttack = div.querySelector("[data-action=rollDamage]");
+        if (!isAttack) return;
+        const data = isAttack.dataset || {};
+        const attackType = (div.querySelector("div.rollcard-subtitle-center")?.textContent || "").trim();
+        const afLabel = game.i18n.localize("CPR.global.itemType.skill.autofire");
+        if (attackType !== afLabel) return;
+
+        const actor = game.actors.get(data.actorId)
+          || canvas.tokens.get(data.tokenId)?.actor;
+        const item = actor?.items?.get(data.itemId);
+        if (!item) return;
+        if (item.system?.dvTable) return;
+
+        const flag = item.getFlag(FLAG_SCOPE, FLAG_KEY);
+        if (!flag) return;
+
+        const target = message.author?.targets?.first?.() || game.user.targets.first();
+        if (!target) return;
+
+        const token = canvas.tokens.get(data.tokenId)
+          || canvas.tokens.placeables.find((t) => t.actor?.id === actor.id);
+        if (!token) return;
+
+        const dist = getDistance(token, target);
+        const table = await loadTable(flag);
+        const dv = dvAt(table, dist);
+        if (dv < 0) return;
+
+        const attackRoll = parseInt(
+          div.querySelector("span.clickable[data-action='toggleVisibility']")?.textContent || "",
+          10
+        );
+        if (!Number.isFinite(attackRoll)) return;
+
+        const hit = attackRoll > dv;
+        const ref = target.actor?.system?.stats?.ref?.value ?? 0;
+        const evade = ref >= 8;
+        const bg = hit ? "var(--cpr-text-chat-success, #2d9f36)" : "var(--cpr-text-chat-failure, #b90202ff)";
+        const verb = hit ? "hit" : "missed";
+        const by = Math.abs(attackRoll - dv);
+        const evadeNote = evade
+          ? " IF they have declared that they are dodging AND your roll has beat their evasion roll."
+          : "";
+        const text = `${token.name} ${verb} ${target.name} by ${by} according to the ranged DV (${dv})!${evadeNote}`;
+
+        await ChatMessage.create({
+          speaker: message.speaker,
+          content: `<div class="cpr-block" style="padding:10px;background-color:${bg}">${text}</div>`,
+          whisper: message.whisper
+        }, { chatBubble: false });
+
+        console.log("[AF DV] fallback card from flag", flag, "dv", dv);
+      } catch (err) {
+        console.warn("[AF DV] fallback card failed", err);
+      }
+    });
+  }
+
   function forceHover() {
     const proto = Token.prototype;
     if (!proto.showDVDisplay || proto.__cprAfForced) return;
@@ -231,6 +299,7 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
   const start = () => {
     forceHover();
     patchDiwako();
+    fallbackCard();
     console.log("%c[Sanctum AF DV] Ready", "color: #0f0");
   };
 

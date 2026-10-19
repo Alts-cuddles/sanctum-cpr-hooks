@@ -76,9 +76,9 @@ function getDamageDice(message) {
   return fromRolls;
 }
 
-function isRangedWeapon(item, title = "") {
-  const blob = `${item?.system?.weaponType || ""} ${item?.name || ""} ${title}`.toLowerCase();
-  return /pistol|smh|smg|rifle|shotgun|bow|sniper|launcher|grenade|autofire|machinegun|machine gun|subcompact/.test(blob);
+function usesMeleeWeaponSkill(item) {
+  const skill = (item?.system?.weaponSkill || item?.system?.skill || "").toLowerCase().trim();
+  return skill === "melee weapon" || skill === "melee";
 }
 
 async function applyRedLaceHumanity(actor, key) {
@@ -201,15 +201,15 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
       return n && (titleNorm === n || titleNorm.includes(n) || n.includes(titleNorm));
     });
 
-    const ranged = isRangedWeapon(hit, rawTitle);
+    const melee = usesMeleeWeaponSkill(hit);
     console.log("[Red Lace Crit]", {
       actor: actor.name,
       rawTitle,
       hit: hit?.name,
-      type: hit?.system?.weaponType,
-      ranged
+      skill: hit?.system?.weaponSkill,
+      melee
     });
-    if (ranged) return;
+    if (!melee) return;
 
     const dice = getDamageDice(message);
     const sixes = dice.filter(v => v === 6).length;
