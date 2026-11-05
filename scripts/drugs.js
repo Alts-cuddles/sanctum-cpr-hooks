@@ -41,7 +41,7 @@ async function applyBWHumanity(actor, label, key) {
   window._bwLaceDone.add(key);
 
   const formula = label === "Black Lace" ? "2d6" : "1d6";
-  const roll = await new Roll(formula).evaluate({ async: true });
+  const roll = await new Roll(formula).evaluate();
   const loss = roll.total;
   if (game.dice3d) await game.dice3d.showForRoll(roll, game.user, true);
 

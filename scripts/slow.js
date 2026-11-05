@@ -1,3 +1,5 @@
+import { FLAG_SCOPE, logError } from "./shared.js";
+
 // ============================================
 // Sanctum - MOVE Restriction / Slowdown Toggle
 // Direct MOVE.value write. No Active Effects.
@@ -47,25 +49,25 @@ console.log("%cSanctum MOVE Toggle | Loading", "color: #42d3ea; font-weight: bol
     }
 
     const actor = target.actor;
-    const existing = actor.getFlag("world", FLAG_KEY);
+    const existing = actor.getFlag(FLAG_SCOPE, FLAG_KEY);
     const currentMove = getMoveValue(actor);
 
     try {
       if (existing) {
         const restore = Math.max(0, Number(existing.original) || (currentMove + amount));
         await setMoveValue(actor, restore);
-        await actor.unsetFlag("world", FLAG_KEY);
+        await actor.unsetFlag(FLAG_SCOPE, FLAG_KEY);
         ui.notifications.info(`${target.name}: MOVE reduction removed`);
         button.css({ opacity: "1", color: "#42d3ea" }).html(`<i class="fas fa-walking"></i>`);
       } else {
         const newMove = Math.max(0, currentMove - amount);
         await setMoveValue(actor, newMove);
-        await actor.setFlag("world", FLAG_KEY, { amount, original: currentMove });
+        await actor.setFlag(FLAG_SCOPE, FLAG_KEY, { amount, original: currentMove });
         ui.notifications.info(`${target.name}: MOVE reduced by ${amount}`);
         button.css({ opacity: "0.7", color: "#39ff14" }).html(`<i class="fas fa-check"></i>`);
       }
     } catch (err) {
-      console.error("[MOVE Toggle] Failed:", err);
+      logError("MOVE toggle", err);
       ui.notifications.error("Failed to toggle MOVE reduction.");
     }
   }

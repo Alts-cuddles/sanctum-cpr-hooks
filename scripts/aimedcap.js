@@ -1,3 +1,5 @@
+import { logError } from "./shared.js";
+
 console.log("Sanctum Aimed Cap | Loading...");
 
 if (window._aimedCapHookId) {
@@ -92,7 +94,7 @@ window._aimedCapHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
       );
     }, 200);
   } catch (err) {
-    console.error("[Sanctum Aimed Cap] ERROR:", err);
+    logError("Aimed cap", err);
   }
 });
 
