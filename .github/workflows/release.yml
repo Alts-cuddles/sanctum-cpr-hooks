@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. 1.6.1)
+        required: true
+        default: "1.6.1"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Build package
+        run: |
+          set -euo pipefail
+          mkdir -p dist/sanctum-cpr-hooks
+          cp module.json dist/sanctum-cpr-hooks/
+          cp -a scripts dist/sanctum-cpr-hooks/
+          (cd dist && zip -r ../sanctum-cpr-hooks.zip sanctum-cpr-hooks)
+          ls -la module.json sanctum-cpr-hooks.zip
+          python3 -c 'import json; print("module.json version:", json.load(open("module.json"))["version"])'
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/notes.md <<'MD'
+          ## Sanctum CPR Hooks 1.6.1
+
+          - Power Rebuild crit only applies to the weapon that dealt the damage
+          - Explosive ammo crit uses the same weapon-specific check
+          - Speedware cleanup uses deleteCombat (v12 has no combatEnd)
+          - Shared helpers for damage card parsing
+          MD
+          # strip accidental leading indentation from the heredoc above
+          sed -i 's/^          //' /tmp/notes.md
+          gh release create "$TAG" \
+            module.json \
+            sanctum-cpr-hooks.zip \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "$TAG" \
+            --notes-file /tmp/notes.md \
+            --target main
