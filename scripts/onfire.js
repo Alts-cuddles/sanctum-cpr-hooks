@@ -1,3 +1,5 @@
+import { FLAG_SCOPE, logError } from "./shared.js";
+
 // ============================================
 // Sanctum - On Fire Damage (End of Turn Only)
 // Module-safe + lock-based (no duplicates)
@@ -63,18 +65,20 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     if (!iControl(token, actor)) return;
 
     const lockKey = `${combat.id}-${finishedId}-${currentRound}`;
-    const announced = foundry.utils.duplicate(combat.getFlag("world", "onFireAnnounced") || {});
+    const announced = foundry.utils.duplicate(combat.getFlag(FLAG_SCOPE, "onFireAnnounced") || {});
 
     if (announced[lockKey]) return;
 
     announced[lockKey] = game.user.id;
     try {
-      await combat.setFlag("world", "onFireAnnounced", announced);
+      await combat.setFlag(FLAG_SCOPE, "onFireAnnounced", announced);
     } catch (err) {
+      // Players usually lack permission to write Combat flags; the GM path handles it.
+      console.debug("Sanctum On Fire | lock not acquired", err?.message);
       return;
     }
 
-    const fresh = combat.getFlag("world", "onFireAnnounced") || {};
+    const fresh = combat.getFlag(FLAG_SCOPE, "onFireAnnounced") || {};
     if (fresh[lockKey] !== game.user.id) return;
 
     const FIRE_EFFECTS = {
@@ -103,7 +107,12 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     const currentHP = foundry.utils.getProperty(actor, hpPath) ?? 0;
     const newHP = Math.max(0, currentHP - damage);
 
-    await actor.update({ [hpPath]: newHP });
+    try {
+      await actor.update({ [hpPath]: newHP });
+    } catch (err) {
+      logError("On Fire HP update", err);
+      return;
+    }
 
     ChatMessage.create({
       type: "base",
@@ -137,10 +146,8 @@ console.log("%cSanctum On Fire | Loading", "color: #ff6b00; font-weight: bold");
     globalThis.sanctumLastRound = combat.round ?? 0;
   });
 
-  Hooks.on("combatEnd", async (combat) => {
-    if (!game.user.isGM) return;
-    await combat.unsetFlag("world", "onFireAnnounced");
-  });
+  // (Removed a "combatEnd" hook: v12 has no such hook, and the lock flag lives
+  // on the Combat document, which is gone once combat is deleted.)
 
   console.log("%cSanctum On Fire | Ready (controller posts, lock-protected)", "color: #ff6b00; font-weight: bold");
 })();
