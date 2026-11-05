@@ -1,3 +1,5 @@
+import { logError } from "./shared.js";
+
 // ============ RED LACE – DRUG ITEM SCRIPT ============
 const DRUG_NAME = "Red Lace";
 
@@ -87,7 +89,7 @@ async function applyRedLaceHumanity(actor, key) {
   if (game.user.id !== getHumanityPosterId(actor)) return;
   window._redLaceHumanityDone.add(key);
 
-  const roll = await new Roll("1d6").evaluate({ async: true });
+  const roll = await new Roll("1d6").evaluate();
   const loss = roll.total;
   if (game.dice3d) await game.dice3d.showForRoll(roll, game.user, true);
 
@@ -246,14 +248,14 @@ window._redLaceCritHookId = Hooks.on("createChatMessage", (message) => {
       '<span style="display:inline-block;border:2px solid #ffd700;border-radius:4px;"><img$1></span>'
     );
 
-    message.update({ content: updated }).then(() => {
+    message.update({ content: updated }).catch(err => logError("Red Lace crit update", err)).then(() => {
       const el = document.querySelector(`li[data-message-id="${message.id}"]`);
       const div = el?.querySelector(".message-content");
       if (div) div.innerHTML = updated;
       console.log("%c[Red Lace Crit] card updated +5", "color:lime;font-weight:bold");
     });
   } catch (err) {
-    console.error("Red Lace error:", err);
+    logError("Red Lace crit", err);
   }
 });
 

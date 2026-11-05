@@ -1,9 +1,10 @@
+import { FLAG_SCOPE, logError } from "./shared.js";
+
 console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
 
 (() => {
   if (window.__cprAfDvInit) return;
 
-  const FLAG_SCOPE = "world";
   const FLAG_KEY = "autofireDvTable";
 
   function esc(s) {
@@ -89,7 +90,7 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
   }
 
   function lastRolledWeapon() {
-    const msgs = game.messages.contents.slice().reverse();
+    const msgs = game.messages.contents.slice(-50).reverse(); // recent messages only
     const actors = canvas.tokens.controlled.map((t) => t.actor).filter(Boolean);
     const weapons = actors.flatMap((a) => a.items.filter((i) => i.type === "weapon"));
     for (const m of msgs) {
@@ -196,7 +197,7 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
 
         console.log("[AF DV] fallback card from flag", flag, "dv", dv);
       } catch (err) {
-        console.warn("[AF DV] fallback card failed", err);
+        logError("AF DV fallback card", err);
       }
     });
   }
@@ -283,13 +284,13 @@ console.log("%c[Sanctum AF DV] file loaded", "color: #0f0; font-weight: bold");
         ui.notifications.info(item.name + ": Autofire DV = " + (val || "none"));
       });
     } catch (err) {
-      console.warn("[Sanctum AF DV] inject failed", err);
+      logError("AF DV inject", err);
     }
   }
 
   Hooks.on("renderItemSheet", inject);
   Hooks.on("renderItemSheetV2", inject);
-  Hooks.on("renderCPRItemSheet", inject);
+  // renderCPRItemSheet removed: CPRItemSheet extends ItemSheet, so renderItemSheet already fires for it.
 
   game.cprWorld ??= {};
   game.cprWorld.getAutofireDvTable = (item) => item?.getFlag(FLAG_SCOPE, FLAG_KEY) || "";

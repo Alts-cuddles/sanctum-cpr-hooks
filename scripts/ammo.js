@@ -1,3 +1,5 @@
+import { FLAG_SCOPE, logError, resolveActor, resolveSpeakerActor, findWeaponsByTitle } from "./shared.js";
+
 console.log("Sanctum Ammo Hooks 2.2 | Loading...");
 
 const ammoHookList = [
@@ -151,6 +153,18 @@ function weaponHasExplosiveAmmo(actor, weaponName) {
   );
 }
 
+function findDamageWeapon(message, actor, title) {
+  const src = message.getFlag(FLAG_SCOPE, "damageSource");
+  if (src?.itemId) {
+    const item = (resolveActor(src) || actor)?.items.get(src.itemId);
+    if (item) return item;
+  }
+  const matches = findWeaponsByTitle(actor, title);
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1 && matches.every(i => i.getFlag(FLAG_SCOPE, "isPowerWeapon"))) return matches[0];
+  return null;
+}
+
 function applyExplosiveCritCard(content, bonus = 5) {
   let updated = content;
   const b = String(bonus);
@@ -207,8 +221,8 @@ window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
     if (/damage dealt to/i.test(content)) return;
     if (/Critical Damage:/i.test(content)) return;
 
-    const actor = game.actors.get(message.speaker?.actor)
-      || canvas.tokens.get(message.speaker?.token)?.actor;
+    const src = message.getFlag(FLAG_SCOPE, "damageSource");
+    const actor = (src && resolveActor(src)) || resolveSpeakerActor(message.speaker);
     if (!actor) return;
 
     const rawTitle = content.match(/chat-rollTitle-stat[\s\S]*?<div[^>]*>\s*([^<]+?)\s*<\/div>/i)?.[1]?.trim() || "";
@@ -226,17 +240,15 @@ window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
 
     if (sixes >= 2 || high < 2) return;
 
-    const powerItem = actor.items.find(i =>
-      i.type === "weapon" &&
-      i.getFlag("world", "isPowerWeapon") &&
-      (rawTitle.toLowerCase().includes(i.name.toLowerCase()) ||
-       i.name.toLowerCase().includes(rawTitle.toLowerCase().replace(/\s*\(.*\)\s*$/, "")))
-    );
+    // Power Rebuild: only the weapon that dealt THIS damage (stamped by techpower.js
+    // from the rollDamage button's item id), else an exact title match on this actor.
+    const dmgWeapon = findDamageWeapon(message, actor, rawTitle);
+    const powerItem = dmgWeapon?.getFlag(FLAG_SCOPE, "isPowerWeapon") ? dmgWeapon : null;
     const bonus = powerItem ? 10 : 5;
     const updated = applyExplosiveCritCard(content, bonus);
 
     const updateData = { content: updated };
-    if (powerItem) updateData["flags.world.powerCrit"] = true;
+    if (powerItem) updateData[`flags.${FLAG_SCOPE}.powerCrit`] = true;
     await message.update(updateData);
 
     const el = document.querySelector(`li[data-message-id="${message.id}"]`);
@@ -251,7 +263,7 @@ window._explosiveCritHookId = Hooks.on("createChatMessage", async (message) => {
       high
     });
   } catch (err) {
-    console.error("[Sanctum] Explosive Crit error:", err);
+    logError("Explosive crit", err);
   }
 });
 
@@ -380,7 +392,7 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
     setTimeout(applyMods, 100);
 
   } catch (err) {
-    console.error("[Sanctum] To-hit error:", err);
+    logError("Ammo to-hit", err);
   }
 });
 
@@ -389,6 +401,7 @@ window._highPrecisionHookId = Hooks.on("renderCPRRollDialog", (app, html) => {
 // ============================================================
 
 window._ammoReminderHookId = Hooks.on("createChatMessage", (message) => {
+  try {
   const authorId = message.author?.id || message.user?.id;
   if (authorId !== game.user.id) return;
   if (alreadyProcessed(message.id + "-reminder")) return;
@@ -424,6 +437,9 @@ window._ammoReminderHookId = Hooks.on("createChatMessage", (message) => {
       speaker: message.speaker,
       content: `<div class="cpr-block" style="padding:10px;background-color:#5c1a1a"><b>Hollow Point / Serrated</b><br>+1 Base Death Save + possible extra Injury.</div>`
     }, { chatBubble: false });
+  }
+  } catch (err) {
+    logError("Ammo reminders", err);
   }
 });
 
